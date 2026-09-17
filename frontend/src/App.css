@@ -34,9 +34,9 @@ textarea { resize: vertical; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #80c18e; box-shadow: 0 0 0 5px rgba(128, 193, 142, .14); }
 
 .app-shell { min-height: 100vh; background: #f3f1ed; }
-.topbar { display: flex; align-items: center; justify-content: space-between; min-height: 76px; padding: 0 max(5vw, 24px); border-bottom: 1px solid var(--line); background: var(--paper); }
+.topbar { display: flex; align-items: center; justify-content: space-between; min-height: 88px; padding: 0 max(5vw, 24px); border-bottom: 1px solid var(--line); background: var(--paper); }
 .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: -.03em; }
-.app-logo { display: block; width: 46px; height: 46px; object-fit: contain; }
+.app-logo { display: block; width: 66px; height: 66px; object-fit: contain; }
 .account { display: flex; align-items: center; gap: 22px; }
 .account div { display: grid; text-align: right; gap: 3px; }
 .account strong { font-size: 13px; }
@@ -116,7 +116,8 @@ textarea { resize: vertical; }
   .appointment-row { grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; }
   .barber-info { grid-column: 2 / 3; }
   .cancel-button { grid-column: 3; grid-row: 1 / span 2; }
-  .topbar { padding: 0 16px; }
+  .topbar { min-height: 76px; padding: 0 16px; }
+  .app-logo { width: 54px; height: 54px; }
   .account { gap: 12px; }
   .account div { display: none; }
 }
