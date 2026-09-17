@@ -13,28 +13,30 @@ h1, h2, h3, p { margin: 0; }
 h1, h2, h3, .brand { font-family: 'Manrope', sans-serif; }
 
 .login-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); background: var(--paper); }
-.login-panel { display: flex; flex-direction: column; justify-content: center; max-width: 570px; width: 100%; padding: 7vw; margin: auto; }
+.login-panel { display: flex; flex-direction: column; justify-content: center; max-width: 570px; width: 100%; padding: 5vw; margin: auto; }
+.login-heading h1 { margin: 0; color: var(--ink); font: 800 clamp(42px, 5vw, 68px)/1 'Manrope', sans-serif; letter-spacing: -.07em; }
+.login-heading p { margin-top: 12px; color: var(--muted); font-size: 17px; }
+.login-logo { width: min(420px, 72%); height: auto; object-fit: contain; margin: auto; }
 .brand-mark { display: grid; place-items: center; width: 52px; height: 52px; background: var(--orange); color: white; font: 800 16px 'Manrope', sans-serif; letter-spacing: .04em; transform: rotate(-5deg); margin-bottom: 42px; }
 .brand-mark.small { width: 30px; height: 30px; font-size: 10px; margin: 0; }
 .eyebrow { color: var(--orange); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-.login-panel h1 { font-size: clamp(38px, 5vw, 66px); line-height: 1.03; letter-spacing: -.05em; margin: 18px 0 20px; max-width: 430px; }
 .login-copy, .subheading { color: var(--muted); line-height: 1.6; max-width: 440px; }
-.login-form { display: grid; gap: 18px; max-width: 380px; margin-top: 42px; }
+.login-form { display: grid; gap: 18px; max-width: 380px; margin-top: 34px; }
 label { display: grid; gap: 8px; color: #626764; font-size: 13px; font-weight: 600; }
 input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; padding: 12px 13px; outline: 0; transition: border-color .2s, box-shadow .2s; }
 input:focus, select:focus, textarea:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(215, 94, 53, .12); }
 textarea { resize: vertical; }
 .primary-button { border: 0; border-radius: 3px; background: var(--orange); color: white; padding: 12px 18px; font-weight: 700; transition: background .2s, transform .2s; }
 .primary-button:hover { background: var(--orange-dark); transform: translateY(-1px); }
-.login-aside { display: flex; flex-direction: column; justify-content: flex-end; gap: 18px; min-height: 100vh; padding: 7vw; color: white; background: linear-gradient(145deg, rgba(27, 39, 43, .96), rgba(27, 39, 43, .82)), url('./assets/hero.png') center / cover; }
-.login-aside strong { max-width: 390px; font: 700 clamp(30px, 4vw, 56px)/1.08 'Manrope', sans-serif; letter-spacing: -.05em; }
-.aside-kicker { color: #e6aa83; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.login-aside { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 5vw; background: #1d2330; }
 .aside-note { display: flex; align-items: center; gap: 9px; color: #bfc8c5; font-size: 13px; margin-top: 28px; }
+.login-footnote { margin-top: 18px; color: var(--muted); font-size: 12px; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #80c18e; box-shadow: 0 0 0 5px rgba(128, 193, 142, .14); }
 
 .app-shell { min-height: 100vh; background: #f3f1ed; }
 .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 76px; padding: 0 max(5vw, 24px); border-bottom: 1px solid var(--line); background: var(--paper); }
 .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: -.03em; }
+.app-logo { display: block; width: 46px; height: 46px; object-fit: contain; }
 .account { display: flex; align-items: center; gap: 22px; }
 .account div { display: grid; text-align: right; gap: 3px; }
 .account strong { font-size: 13px; }
@@ -102,8 +104,9 @@ textarea { resize: vertical; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .login-shell { display: block; }
-  .login-panel { min-height: 100vh; padding: 42px 24px; }
-  .login-aside { display: none; }
+  .login-panel { min-height: 100vh; padding: 32px 24px; }
+  .login-aside { min-height: 260px; padding: 28px; }
+  .login-logo { width: min(220px, 70%); }
   .content { width: min(100% - 32px, 620px); padding: 42px 0 60px; }
   .page-heading { align-items: start; flex-direction: column; margin-bottom: 34px; }
   .page-heading .primary-button { width: 100%; }

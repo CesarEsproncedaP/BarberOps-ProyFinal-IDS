@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 520" role="img" aria-labelledby="title desc">
+  <title id="title">BarberOps</title>
+  <desc id="desc">Sello circular de BarberOps Management System</desc>
+  <circle cx="260" cy="260" r="244" fill="#1d2330" stroke="#54b1ed" stroke-width="12"/>
+  <circle cx="260" cy="260" r="218" fill="none" stroke="#69758d" stroke-width="3" stroke-dasharray="9 9"/>
+  <path d="M184 126 223 268l-28 19-39-142zM336 126l-39 142 28 19 39-142z" fill="#b8c5d8" stroke="#e2e8f2" stroke-width="4"/>
+  <rect x="221" y="111" width="78" height="143" rx="9" fill="#f8fafc" stroke="#b8c5d8" stroke-width="5"/>
+  <path d="M224 122h72v34h-72zm0 68h72v34h-72z" fill="#e24b3e"/>
+  <path d="m224 156 51 34h21v-34l-51-34h-21zm0 68 45 30h27v-30l-45-30h-27z" fill="#3972d7"/>
+  <rect x="207" y="98" width="106" height="18" rx="7" fill="#b8c5d8" stroke="#e2e8f2" stroke-width="4"/>
+  <rect x="207" y="252" width="106" height="18" rx="7" fill="#b8c5d8" stroke="#e2e8f2" stroke-width="4"/>
+  <circle cx="260" cy="88" r="19" fill="#c8d2e1"/>
+  <rect x="44" y="244" width="432" height="82" rx="10" fill="#1d2330" stroke="#54b1ed" stroke-width="6"/>
+  <text x="260" y="299" fill="#fff" font-family="Arial, sans-serif" font-size="49" font-weight="800" text-anchor="middle" letter-spacing="1">BARBER<tspan fill="#54b1ed">OPS</tspan></text>
+  <text x="260" y="366" fill="#aeb9ca" font-family="Arial, sans-serif" font-size="15" font-weight="700" text-anchor="middle" letter-spacing="6">MANAGEMENT SYSTEM</text>
+  <path d="M186 420h148M186 420l-30-30M334 420l30-30" fill="none" stroke="#54b1ed" stroke-width="4"/>
+  <circle cx="186" cy="420" r="8" fill="#54b1ed"/><circle cx="260" cy="420" r="8" fill="#54b1ed"/><circle cx="334" cy="420" r="8" fill="#54b1ed"/>
+</svg>

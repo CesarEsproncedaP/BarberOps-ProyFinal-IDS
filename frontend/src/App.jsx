@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import barberopsLogo from './assets/barberops-logo.svg'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
@@ -151,18 +152,21 @@ function App() {
   if (!token || !user) {
     return <main className="login-shell">
       <section className="login-panel">
-        <div className="brand-mark">BO</div>
-        <p className="eyebrow">BarberOps / Operaciones</p>
-        <h1>Tu agenda, en orden.</h1>
-        <p className="login-copy">Accede al centro de operaciones para coordinar cada cita del día.</p>
+        <div className="login-heading">
+          <h1>BarberOps</h1>
+          <p>Agenda para administrar una barbería</p>
+        </div>
         <form className="login-form" onSubmit={handleLogin}>
-          <label>Email<input name="email" type="email" placeholder="nombre@barberia.com" required /></label>
-          <label>Contraseña<input name="password" type="password" placeholder="••••••••" required /></label>
+          <label>Correo electrónico<input name="email" type="email" placeholder="nombre@barberops.com" required /></label>
+          <label>Contraseña<input name="password" type="password" placeholder="Ingresa tu contraseña" required /></label>
           {error && <p className="error-message">{error}</p>}
-          <button className="primary-button" type="submit">Entrar al sistema</button>
+          <button className="primary-button" type="submit">Iniciar sesión</button>
         </form>
+        <p className="login-footnote">Para más información manda WhatsApp al 81 24154041</p>
       </section>
-      <aside className="login-aside"><span className="aside-kicker">Agenda central</span><strong>El ritmo de la barbería empieza aquí.</strong><div className="aside-note"><span className="live-dot" /> Sistema operativo</div></aside>
+      <aside className="login-aside">
+        <img className="login-logo" src={barberopsLogo} alt="BarberOps Management System" />
+      </aside>
     </main>
   }
 
@@ -181,9 +185,9 @@ function App() {
   }
 
   return <main className="app-shell">
-    <header className="topbar"><div className="brand"><span className="brand-mark small">BO</span><span>BarberOps</span></div><div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></header>
+    <header className="topbar"><div className="brand"><img className="app-logo" src={barberopsLogo} alt="BarberOps" /></div><div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></header>
     <section className="content">
-      <div className="page-heading"><div><p className="eyebrow">{isStaff ? 'Control de operación' : 'Vista personal'}</p><h1>{isStaff ? 'Agenda' : 'Mi Agenda'}</h1><p className="subheading">{isStaff ? 'Coordina las citas de tu equipo para que cada silla tenga su momento.' : 'Tus próximas citas asignadas, siempre a la vista.'}</p></div>{isStaff && <button className="primary-button" onClick={() => setShowForm((current) => !current)}>{showForm ? 'Cerrar formulario' : '+ Nueva cita'}</button>}</div>
+      <div className="page-heading"><div><p className="eyebrow">{isStaff ? 'Control de operaciones' : 'Vista personal'}</p><h1>{isStaff ? 'Agenda' : 'Mi Agenda'}</h1><p className="subheading">{isStaff ? 'Programa las citas de tus clientes con tus barberos' : 'Tus próximas citas asignadas, siempre a la vista.'}</p></div>{isStaff && <button className="primary-button" onClick={() => setShowForm((current) => !current)}>{showForm ? 'Cerrar formulario' : '+ Nueva cita'}</button>}</div>
       {error && <div className="feedback error-message">{error}</div>}
       {notice && <div className="feedback success-message">{notice}</div>}
       {showForm && isStaff && <form className="appointment-form" onSubmit={handleCreate}>
