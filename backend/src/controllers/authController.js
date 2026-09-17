@@ -37,3 +37,8 @@ export const login = async (req, res) => {
 }
 
 export const getCurrentUser = (req, res) => res.json({ user: publicUser(req.user) })
+
+export const listBarbers = async (req, res) => {
+  const barbers = await User.find({ role: 'barbero' }).select('name email role').sort({ name: 1 })
+  return res.json({ users: barbers })
+}

@@ -1,11 +1,14 @@
 import 'dotenv/config'
+import cors from 'cors'
 import express from 'express'
 import helmet from 'helmet'
 import authRoutes from './routes/authRoutes.js'
+import citaRoutes from './routes/citaRoutes.js'
 
 const app = express()
 
 app.disable('x-powered-by')
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }))
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -41,6 +44,7 @@ app.use((req, res, next) => {
 app.use(express.json())
 app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'barberops-api' }))
 app.use('/api/auth', authRoutes)
+app.use('/api/citas', citaRoutes)
 
 app.use((error, req, res, next) => {
   console.error(error)
