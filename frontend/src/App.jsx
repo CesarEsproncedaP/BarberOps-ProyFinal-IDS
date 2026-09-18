@@ -60,6 +60,8 @@ function App() {
   const [loading, setLoading] = useState(Boolean(token))
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [clientLookup, setClientLookup] = useState(null)
+  const [clientLookupLoading, setClientLookupLoading] = useState(false)
 
   const api = useCallback(async (path, options = {}) => {
     const response = await fetch(`${API_URL}${path}`, {
@@ -137,6 +139,25 @@ function App() {
     }
   }
 
+  const handleClientLookup = async () => {
+    if (!form.clienteTelefono.trim()) return
+    setClientLookupLoading(true)
+    setError('')
+    try {
+      const response = await api(`/clientes/telefono/${encodeURIComponent(form.clienteTelefono.trim())}`)
+      setClientLookup(response.cliente)
+      updateForm('clienteNombre', response.cliente.nombre)
+    } catch (requestError) {
+      if (requestError.message === 'Cliente no encontrado') {
+        setClientLookup({ nuevo: true })
+      } else {
+        setError(requestError.message)
+      }
+    } finally {
+      setClientLookupLoading(false)
+    }
+  }
+
   const handleCancel = async (id) => {
     setError('')
     setNotice('')
@@ -194,7 +215,7 @@ function App() {
         <div className="form-heading"><div><p className="eyebrow">Nueva reserva</p><h2>Agendar una cita</h2></div><span>Completa los datos de la visita</span></div>
         <div className="form-grid">
           <label>Nombre del cliente<input value={form.clienteNombre} onChange={(event) => updateForm('clienteNombre', event.target.value)} required /></label>
-          <label>Teléfono<input value={form.clienteTelefono} onChange={(event) => updateForm('clienteTelefono', event.target.value)} required /></label>
+          <label>Teléfono<div className="phone-search"><input value={form.clienteTelefono} onChange={(event) => { updateForm('clienteTelefono', event.target.value); setClientLookup(null) }} required /><button className="secondary-button" type="button" onClick={handleClientLookup} disabled={clientLookupLoading}>{clientLookupLoading ? 'Buscando...' : 'Buscar'}</button></div></label>
           <label>Barbero<select value={form.barbero} onChange={(event) => updateSchedule('barbero', event.target.value)} required><option value="">Selecciona un barbero</option>{barberos.map((barbero) => <option key={barbero._id} value={barbero._id}>{barbero.name}</option>)}</select></label>
           <label>Servicio<select value={form.servicio} onChange={(event) => updateForm('servicio', event.target.value)}><option>Corte</option><option>Corte y barba</option><option>Barba</option></select></label>
           <label>Fecha<input type="date" value={form.fecha} onChange={(event) => updateSchedule('fecha', event.target.value)} required /></label>
@@ -202,6 +223,9 @@ function App() {
           <label>Duración<input value="45 minutos" readOnly /></label>
           <label className="wide">Notas<textarea value={form.notas} onChange={(event) => updateForm('notas', event.target.value)} rows="2" placeholder="Preferencias o detalles importantes" /></label>
         </div>
+        {clientLookup && <div className={`client-summary ${clientLookup.nuevo ? 'client-new' : ''}`}>
+          {clientLookup.nuevo ? <><strong>Cliente nuevo</strong><span>Se creará su ficha automáticamente al guardar la cita.</span></> : <><div><strong>{clientLookup.nombre}</strong><span>{clientLookup.historialVisitas.length} visitas · {clientLookup.contadorCortes} cortes acumulados</span></div><div><strong>{clientLookup.adeudo > 0 ? `Adeudo pendiente: $${clientLookup.adeudo.toFixed(2)}` : 'Sin adeudo pendiente'}</strong><span>{clientLookup.beneficioLealtad ? `Beneficio disponible: ${clientLookup.beneficioLealtad}` : 'Sin beneficio de lealtad por ahora'}</span></div></>}
+        </div>}
         <button className="primary-button" type="submit" disabled={!hasSelectedSlot}>Guardar cita</button>
       </form>}
       <div className="agenda-toolbar"><div><h2>{formatDate(form.fecha)}</h2><p>{visibleCitas.length} {visibleCitas.length === 1 ? 'cita activa' : 'citas activas'}</p></div><input aria-label="Filtrar fecha" type="date" value={form.fecha} onChange={(event) => updateForm('fecha', event.target.value)} /></div>

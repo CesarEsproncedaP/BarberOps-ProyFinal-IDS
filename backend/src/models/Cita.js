@@ -8,6 +8,7 @@ const citaSchema = new mongoose.Schema(
     clienteTelefono: { type: String, required: true, trim: true },
     barbero: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     servicio: { type: String, required: true, trim: true },
+    incluyoCorte: { type: Boolean, default: false },
     fecha: { type: Date, required: true },
     horaInicio: { type: String, required: true, match: timePattern },
     horaFin: { type: String, required: true, match: timePattern },

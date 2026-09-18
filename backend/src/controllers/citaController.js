@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import Cliente from '../models/Cliente.js'
 import Cita from '../models/Cita.js'
 import User from '../models/User.js'
 
@@ -57,8 +58,37 @@ const hasOverlap = async ({ barbero, fecha, horaInicio, horaFin, excludeId }) =>
 
 const sendInvalidData = (res, message) => res.status(400).json({ message })
 
+const normalizePhone = (value) => typeof value === 'string' ? value.trim() : ''
+
+const serviceIncludesCut = (servicio) => /\bcorte\b/i.test(servicio)
+
+const recordClientVisit = async ({ cita, clienteNombre, clienteTelefono, barbero, servicio, incluyoCorte }) => {
+  const client = await Cliente.findOneAndUpdate(
+    { telefono: clienteTelefono },
+    { $setOnInsert: { nombre: clienteNombre, telefono: clienteTelefono } },
+    { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },
+  )
+
+  client.nombre = clienteNombre
+  client.historialVisitas.push({
+    citaId: cita._id,
+    fecha: cita.fecha,
+    barbero,
+    servicio,
+    incluyoCorte,
+  })
+  if (incluyoCorte) {
+    client.contadorCortes += 1
+    if (client.contadorCortes === 12) client.contadorCortes = 0
+  }
+  await client.save()
+  return client
+}
+
 export const createCita = async (req, res) => {
-  const { clienteNombre, clienteTelefono, barbero, servicio, fecha, horaInicio, horaFin, notas } = req.body
+  const { clienteNombre, barbero, servicio, fecha, horaInicio, horaFin, notas } = req.body
+  const clienteTelefono = normalizePhone(req.body.clienteTelefono)
+  const incluyoCorte = req.body.incluyoCorte === undefined ? serviceIncludesCut(servicio || '') : req.body.incluyoCorte === true
   const normalizedDate = normalizeDate(fecha)
 
   if (!clienteNombre || !clienteTelefono || !barbero || !servicio || !normalizedDate || !validateTimeRange(normalizedDate, horaInicio, horaFin)) {
@@ -75,12 +105,15 @@ export const createCita = async (req, res) => {
     clienteTelefono,
     barbero,
     servicio,
+    incluyoCorte,
     fecha: normalizedDate,
     horaInicio,
     horaFin,
     notas,
     creadoPor: req.user._id,
   })
+
+  await recordClientVisit({ cita, clienteNombre, clienteTelefono, barbero, servicio, incluyoCorte })
 
   return res.status(201).json({ cita: await Cita.findById(cita._id).populate('barbero', 'name email role').populate('creadoPor', 'name email role') })
 }

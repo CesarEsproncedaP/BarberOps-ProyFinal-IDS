@@ -6,6 +6,7 @@ import request from 'supertest'
 import app from '../src/app.js'
 import { connectDatabase } from '../src/config/db.js'
 import Cita from '../src/models/Cita.js'
+import Cliente from '../src/models/Cliente.js'
 import User from '../src/models/User.js'
 
 let mongoServer
@@ -49,7 +50,7 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => {
-  await Promise.all([User.deleteMany({}), Cita.deleteMany({})])
+  await Promise.all([User.deleteMany({}), Cita.deleteMany({}), Cliente.deleteMany({})])
 
   const users = await Promise.all([
     createUser({ name: 'Admin', email: 'admin-citas@test.local', role: 'admin' }),
