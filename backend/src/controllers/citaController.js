@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
-import Cliente from '../models/Cliente.js'
 import Cita from '../models/Cita.js'
+import { recordClientVisit } from '../services/clienteService.js'
 import User from '../models/User.js'
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
@@ -61,29 +61,6 @@ const sendInvalidData = (res, message) => res.status(400).json({ message })
 const normalizePhone = (value) => typeof value === 'string' ? value.trim() : ''
 
 const serviceIncludesCut = (servicio) => /\bcorte\b/i.test(servicio)
-
-const recordClientVisit = async ({ cita, clienteNombre, clienteTelefono, barbero, servicio, incluyoCorte }) => {
-  const client = await Cliente.findOneAndUpdate(
-    { telefono: clienteTelefono },
-    { $setOnInsert: { nombre: clienteNombre, telefono: clienteTelefono } },
-    { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },
-  )
-
-  client.nombre = clienteNombre
-  client.historialVisitas.push({
-    citaId: cita._id,
-    fecha: cita.fecha,
-    barbero,
-    servicio,
-    incluyoCorte,
-  })
-  if (incluyoCorte) {
-    client.contadorCortes += 1
-    if (client.contadorCortes === 12) client.contadorCortes = 0
-  }
-  await client.save()
-  return client
-}
 
 export const createCita = async (req, res) => {
   const { clienteNombre, barbero, servicio, fecha, horaInicio, horaFin, notas } = req.body

@@ -5,6 +5,7 @@ import helmet from 'helmet'
 import authRoutes from './routes/authRoutes.js'
 import citaRoutes from './routes/citaRoutes.js'
 import clienteRoutes from './routes/clienteRoutes.js'
+import inventarioRoutes from './routes/inventarioRoutes.js'
 
 const app = express()
 
@@ -47,6 +48,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'barberop
 app.use('/api/auth', authRoutes)
 app.use('/api/citas', citaRoutes)
 app.use('/api/clientes', clienteRoutes)
+app.use('/api/inventario', inventarioRoutes)
 
 app.use((error, req, res, next) => {
   console.error(error)

@@ -62,6 +62,11 @@ function App() {
   const [notice, setNotice] = useState('')
   const [clientLookup, setClientLookup] = useState(null)
   const [clientLookupLoading, setClientLookupLoading] = useState(false)
+  const [activeView, setActiveView] = useState('agenda')
+  const [inventoryType, setInventoryType] = useState('insumo')
+  const [inventoryProducts, setInventoryProducts] = useState([])
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [movementForm, setMovementForm] = useState({ productoId: '', tipoMovimiento: 'entrada', cantidad: 1, gratis: false, clienteTelefono: '', clienteNombre: '' })
 
   const api = useCallback(async (path, options = {}) => {
     const response = await fetch(`${API_URL}${path}`, {
@@ -100,11 +105,30 @@ function App() {
     }
   }, [api, form.fecha, handleLogout])
 
+  const loadInventory = useCallback(async () => {
+    setInventoryLoading(true)
+    try {
+      const response = await api(`/inventario?tipo=${inventoryType}`)
+      setInventoryProducts(response.productos)
+      setMovementForm((current) => ({ ...current, productoId: response.productos[0]?._id || '' }))
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setInventoryLoading(false)
+    }
+  }, [api, inventoryType])
+
   useEffect(() => {
     if (!token) return undefined
     const timer = setTimeout(() => { void loadDashboard() }, 0)
     return () => clearTimeout(timer)
   }, [loadDashboard, token])
+
+  useEffect(() => {
+    if (!token || !user || user.role === 'barbero' || activeView !== 'inventario') return undefined
+    const timer = setTimeout(() => { void loadInventory() }, 0)
+    return () => clearTimeout(timer)
+  }, [activeView, loadInventory, token, user])
 
   const handleLogin = async (event) => {
     event.preventDefault()
@@ -170,6 +194,29 @@ function App() {
     }
   }
 
+  const handleMovement = async (event) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    try {
+      await api(`/inventario/${movementForm.productoId}/movimiento`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tipoMovimiento: movementForm.tipoMovimiento,
+          cantidad: Number(movementForm.cantidad),
+          gratis: movementForm.gratis,
+          clienteTelefono: movementForm.tipoMovimiento === 'venta' ? movementForm.clienteTelefono : undefined,
+          clienteNombre: movementForm.tipoMovimiento === 'venta' ? movementForm.clienteNombre : undefined,
+        }),
+      })
+      setNotice('Movimiento registrado correctamente')
+      setMovementForm((current) => ({ ...current, cantidad: 1, gratis: false, clienteTelefono: '', clienteNombre: '' }))
+      await loadInventory()
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
   if (!token || !user) {
     return <main className="login-shell">
       <section className="login-panel">
@@ -206,8 +253,8 @@ function App() {
   }
 
   return <main className="app-shell">
-    <header className="topbar"><div className="brand"><img className="app-logo" src={barberopsLogo} alt="BarberOps" /></div><div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></header>
-    <section className="content">
+    <header className="topbar"><div className="brand"><img className="app-logo" src={barberopsLogo} alt="BarberOps" /></div><div className="topbar-actions">{isStaff && <nav className="view-nav"><button className={activeView === 'agenda' ? 'active' : ''} onClick={() => setActiveView('agenda')}>Agenda</button><button className={activeView === 'inventario' ? 'active' : ''} onClick={() => setActiveView('inventario')}>Inventario</button></nav>}<div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></div></header>
+    {activeView === 'agenda' || !isStaff ? <section className="content">
       <div className="page-heading"><div><p className="eyebrow">{isStaff ? 'Control de operaciones' : 'Vista personal'}</p><h1>{isStaff ? 'Agenda' : 'Mi Agenda'}</h1><p className="subheading">{isStaff ? 'Programa las citas de tus clientes con tus barberos' : 'Tus próximas citas asignadas, siempre a la vista.'}</p></div>{isStaff && <button className="primary-button" onClick={() => setShowForm((current) => !current)}>{showForm ? 'Cerrar formulario' : '+ Nueva cita'}</button>}</div>
       {error && <div className="feedback error-message">{error}</div>}
       {notice && <div className="feedback success-message">{notice}</div>}
@@ -230,7 +277,13 @@ function App() {
       </form>}
       <div className="agenda-toolbar"><div><h2>{formatDate(form.fecha)}</h2><p>{visibleCitas.length} {visibleCitas.length === 1 ? 'cita activa' : 'citas activas'}</p></div><input aria-label="Filtrar fecha" type="date" value={form.fecha} onChange={(event) => updateForm('fecha', event.target.value)} /></div>
       {loading ? <div className="empty-state"><span className="loader" />Cargando agenda...</div> : isStaff ? <div className="calendar-scroll"><div className="calendar-grid" style={{ '--barber-count': Math.max(barberos.length, 1) }}><div className="calendar-corner">Hora</div>{barberos.map((barbero) => <div className="calendar-barber" key={barbero._id}><span>Barbero</span><strong>{barbero.name}</strong></div>)}{daySlots.length === 0 ? <div className="calendar-closed">Domingo cerrado</div> : daySlots.map(([start, end]) => <div className="calendar-row" key={start}><div className="calendar-time"><strong>{start}</strong><span>{end}</span></div>{barberos.map((barbero) => { const cita = appointmentFor(barbero._id, start); return <div className="calendar-cell" key={`${barbero._id}-${start}`}>{cita && <article className="calendar-appointment"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio}</p><small>{cita.clienteTelefono}</small><button className="cancel-button" onClick={() => handleCancel(cita._id)}>Cancelar</button></article>}</div> })}</div>)}</div></div> : visibleCitas.length === 0 ? <div className="empty-state"><strong>La agenda está despejada.</strong><span>No tienes citas asignadas para esta fecha.</span></div> : <div className="appointment-list">{visibleCitas.map((cita) => <article className="appointment-row" key={cita._id}><div className="time-block"><strong>{cita.horaInicio}</strong><span>{cita.horaFin}</span></div><div className="appointment-info"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio} <span>·</span> {cita.clienteTelefono}</p>{cita.notas && <small>{cita.notas}</small>}</div><div className="barber-info"><span>Barbero</span><strong>{cita.barbero?.name || 'Sin asignar'}</strong></div></article>)}</div>}
-    </section>
+    </section> : <section className="content inventory-content">
+      <div className="page-heading"><div><p className="eyebrow">Control de existencias</p><h1>Inventario</h1><p className="subheading">Separa los insumos de trabajo de los productos disponibles para venta.</p></div></div>
+      {error && <div className="feedback error-message">{error}</div>}
+      {notice && <div className="feedback success-message">{notice}</div>}
+      <div className="inventory-tabs"><button className={inventoryType === 'insumo' ? 'active' : ''} onClick={() => setInventoryType('insumo')}>Insumos</button><button className={inventoryType === 'venta' ? 'active' : ''} onClick={() => setInventoryType('venta')}>Productos de venta</button></div>
+      <div className="inventory-layout"><div className="inventory-list">{inventoryLoading ? <div className="empty-state"><span className="loader" />Cargando inventario...</div> : inventoryProducts.length === 0 ? <div className="empty-state"><strong>No hay productos en esta vista.</strong><span>Agrega productos desde el API para comenzar.</span></div> : inventoryProducts.map((producto) => <article className={`inventory-card ${producto.necesitaReabastecimiento ? 'low-stock' : ''}`} key={producto._id}><div><span className="inventory-type">{producto.tipo === 'insumo' ? 'Insumo' : 'Venta'}</span><h2>{producto.nombre}</h2><p>{producto.stockActual} {producto.unidad} disponibles · mínimo {producto.stockMinimo}</p></div><strong className="stock-number">{producto.stockActual}</strong>{producto.necesitaReabastecimiento && <span className="restock-warning">Necesita reabastecimiento</span>}</article>)}</div><form className="movement-form" onSubmit={handleMovement}><p className="eyebrow">Trazabilidad</p><h2>Registrar movimiento</h2><label>Producto<select value={movementForm.productoId} onChange={(event) => setMovementForm({ ...movementForm, productoId: event.target.value })} required><option value="">Selecciona un producto</option>{inventoryProducts.map((producto) => <option key={producto._id} value={producto._id}>{producto.nombre}</option>)}</select></label><label>Tipo de movimiento<select value={movementForm.tipoMovimiento} onChange={(event) => setMovementForm({ ...movementForm, tipoMovimiento: event.target.value, gratis: false })}><option value="entrada">Entrada</option><option value="salida_uso">Salida por uso</option>{inventoryType === 'venta' && <option value="venta">Venta</option>}</select></label><label>Cantidad<input type="number" min="1" value={movementForm.cantidad} onChange={(event) => setMovementForm({ ...movementForm, cantidad: event.target.value })} required /></label>{movementForm.tipoMovimiento === 'venta' && <><label>Teléfono del cliente (opcional)<input value={movementForm.clienteTelefono} onChange={(event) => setMovementForm({ ...movementForm, clienteTelefono: event.target.value })} /></label><label>Nombre del cliente<input value={movementForm.clienteNombre} onChange={(event) => setMovementForm({ ...movementForm, clienteNombre: event.target.value })} /></label><label className="check-label"><input type="checkbox" checked={movementForm.gratis} onChange={(event) => setMovementForm({ ...movementForm, gratis: event.target.checked })} /> Producto gratis por lealtad</label></>}<button className="primary-button" type="submit" disabled={!movementForm.productoId}>Guardar movimiento</button></form></div>
+    </section>}
   </main>
 }
 

@@ -42,6 +42,10 @@ textarea { resize: vertical; }
 .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 88px; padding: 0 max(5vw, 24px); border-bottom: 1px solid var(--line); background: var(--paper); }
 .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: -.03em; }
 .app-logo { display: block; width: 66px; height: 66px; object-fit: contain; }
+.topbar-actions { display: flex; align-items: center; gap: 28px; }
+.view-nav { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); background: #f8f5ef; }
+.view-nav button, .inventory-tabs button { border: 0; background: transparent; color: var(--muted); padding: 9px 13px; font-size: 12px; font-weight: 700; }
+.view-nav button.active, .inventory-tabs button.active { color: var(--ink); background: var(--paper); box-shadow: 0 2px 8px rgba(42, 36, 27, .08); }
 .account { display: flex; align-items: center; gap: 22px; }
 .account div { display: grid; text-align: right; gap: 3px; }
 .account strong { font-size: 13px; }
@@ -103,6 +107,21 @@ textarea { resize: vertical; }
 .client-summary strong { color: var(--ink); font-size: 13px; }
 .client-summary span { color: var(--muted); font-size: 12px; }
 .client-summary.client-new { border-left-color: var(--orange); background: #fff4ed; }
+.inventory-tabs { display: flex; gap: 5px; width: fit-content; margin-bottom: 24px; padding: 4px; border: 1px solid var(--line); background: #eae6df; }
+.inventory-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+.inventory-list { display: grid; gap: 10px; }
+.inventory-card { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 112px; padding: 20px; border: 1px solid var(--line); background: var(--paper); box-shadow: 0 8px 22px rgba(42, 36, 27, .04); }
+.inventory-card h2 { margin: 7px 0 5px; font-size: 18px; letter-spacing: -.04em; }
+.inventory-card p { color: var(--muted); font-size: 12px; }
+.inventory-type { color: var(--orange); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.stock-number { color: var(--green); font: 800 30px 'Manrope', sans-serif; }
+.inventory-card.low-stock { border-left: 4px solid #c54a36; }
+.inventory-card.low-stock .stock-number { color: #c54a36; }
+.restock-warning { position: absolute; right: 20px; bottom: 12px; color: #c54a36; font-size: 10px; font-weight: 700; }
+.movement-form { display: grid; gap: 16px; padding: 24px; border: 1px solid var(--line); background: var(--paper); box-shadow: var(--shadow); }
+.movement-form h2 { margin: 8px 0 8px; font-size: 22px; letter-spacing: -.04em; }
+.check-label { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
+.check-label input { width: auto; accent-color: var(--orange); }
 .empty-state { display: grid; place-items: center; gap: 9px; min-height: 260px; color: var(--muted); text-align: center; }
 .empty-state strong { color: var(--ink); font: 700 20px 'Manrope', sans-serif; }
 .loader { width: 22px; height: 22px; border: 2px solid var(--line); border-top-color: var(--orange); border-radius: 50%; animation: spin .7s linear infinite; }
@@ -129,6 +148,10 @@ textarea { resize: vertical; }
   .cancel-button { grid-column: 3; grid-row: 1 / span 2; }
   .topbar { min-height: 76px; padding: 0 16px; }
   .app-logo { width: 54px; height: 54px; }
+  .topbar-actions { gap: 8px; }
+  .view-nav button { padding: 8px 7px; }
   .account { gap: 12px; }
   .account div { display: none; }
+  .inventory-layout { grid-template-columns: 1fr; }
+  .inventory-card { min-height: 124px; }
 }
