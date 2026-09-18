@@ -1,5 +1,6 @@
 import MovimientoInventario from '../models/MovimientoInventario.js'
 import Cita from '../models/Cita.js'
+import CorteCaja from '../models/CorteCaja.js'
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 
@@ -28,15 +29,19 @@ export const ingresos = async (req, res) => {
 
   const citas = await Cita.find({ ...dateQuery(range), estado: 'completada' })
     .populate('barbero', 'name email role')
+    .populate('creadoPor', 'name email role')
   const movimientos = await MovimientoInventario.find({ ...dateQuery(range), tipoMovimiento: 'venta', gratis: false })
     .populate('producto', 'nombre precio')
 
   const porBarbero = {}
   const porServicio = {}
+  const porRecepcionista = {}
   for (const cita of citas) {
     const barberName = cita.barbero?.name || 'Sin barbero'
     porBarbero[barberName] = (porBarbero[barberName] || 0) + (cita.precioFinal || 0)
     porServicio[cita.servicio] = (porServicio[cita.servicio] || 0) + (cita.precioFinal || 0)
+    const receptionistName = cita.creadoPor?.name || 'Sin recepcionista'
+    porRecepcionista[receptionistName] = (porRecepcionista[receptionistName] || 0) + (cita.precioFinal || 0)
   }
   const ingresosCitas = citas.reduce((total, cita) => total + (cita.precioFinal || 0), 0)
   const ingresosProductos = movimientos.reduce((total, movimiento) => total + ((movimiento.producto?.precio || 0) * movimiento.cantidad), 0)
@@ -48,6 +53,7 @@ export const ingresos = async (req, res) => {
     ingresosTotales: ingresosCitas + ingresosProductos,
     porBarbero,
     porServicio,
+    porRecepcionista,
   })
 }
 
@@ -71,7 +77,11 @@ export const corteCaja = async (req, res) => {
   if (!date) return res.status(400).json({ message: 'La fecha debe tener formato YYYY-MM-DD' })
   const nextDate = new Date(date.getTime() + 86400000)
   const query = { fecha: { $gte: date, $lt: nextDate }, estado: 'completada' }
-  if (req.user.role === 'recepcionista') query.creadoPor = req.user._id
+  const existingClosure = await CorteCaja.findOne({ fecha: date, registradoPor: req.user._id })
+  if (existingClosure) query.createdAt = { $gt: existingClosure.cerradoEn }
+  if (req.user.role === 'recepcionista') {
+    query.creadoPor = req.user._id
+  }
 
   const citas = await Cita.find(query).populate('creadoPor', 'name email role').populate('barbero', 'name email role')
   const turnos = {}
@@ -83,5 +93,41 @@ export const corteCaja = async (req, res) => {
     else turnos[key].totalEfectivo += amount
     turnos[key].citas.push(cita)
   }
-  return res.json({ fecha: req.query.fecha, totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0), totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0), turnos: Object.values(turnos) })
+  return res.json({ fecha: req.query.fecha, cerrado: Boolean(existingClosure && citas.length === 0), totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0), totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0), turnos: Object.values(turnos) })
+}
+
+export const cerrarCaja = async (req, res) => {
+  const date = parseDate(req.body.fecha || new Date().toISOString().slice(0, 10))
+  if (!date) return res.status(400).json({ message: 'La fecha debe tener formato YYYY-MM-DD' })
+  const nextDate = new Date(date.getTime() + 86400000)
+  const closeQuery = { fecha: { $gte: date, $lt: nextDate }, estado: 'completada' }
+  if (req.user.role === 'recepcionista') closeQuery.creadoPor = req.user._id
+  const citas = await Cita.find(closeQuery)
+  const totalEfectivo = citas.filter((cita) => cita.metodoPago !== 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0), 0)
+  const totalTransferencia = citas.filter((cita) => cita.metodoPago === 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0), 0)
+  const corte = await CorteCaja.findOneAndUpdate(
+    { fecha: date, registradoPor: req.user._id },
+    { fecha: date, registradoPor: req.user._id, totalEfectivo, totalTransferencia, citas: citas.map((cita) => cita._id), cerradoEn: new Date() },
+    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
+  )
+  return res.status(201).json({ corte, cerrado: true })
+}
+
+export const propinas = async (req, res) => {
+  if (req.user.role === 'recepcionista') return res.status(403).json({ message: 'Las propinas no están disponibles para recepcionistas' })
+  const now = new Date()
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const mondayOffset = (today.getUTCDay() + 6) % 7
+  const start = new Date(today.getTime() - mondayOffset * 86400000)
+  const end = new Date(start.getTime() + 7 * 86400000)
+  const query = { fecha: { $gte: start, $lt: end }, estado: 'completada' }
+  if (req.user.role === 'barbero') query.barbero = req.user._id
+  const citas = await Cita.find(query).populate('barbero', 'name email role')
+  const byBarber = {}
+  for (const cita of citas) {
+    const key = cita.barbero?._id.toString() || 'sin-barbero'
+    if (!byBarber[key]) byBarber[key] = { barbero: cita.barbero, total: 0 }
+    byBarber[key].total += cita.propina || 0
+  }
+  return res.json({ fechaInicio: start.toISOString().slice(0, 10), fechaFin: new Date(end.getTime() - 86400000).toISOString().slice(0, 10), total: Object.values(byBarber).reduce((sum, item) => sum + item.total, 0), porBarbero: Object.values(byBarber) })
 }

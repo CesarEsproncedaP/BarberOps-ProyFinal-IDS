@@ -3,6 +3,7 @@ import barberopsLogo from './assets/barberops-logo.svg'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const SERVICE_PRICES = { Corte: 250, 'Corte y barba': 320, Barba: 150 }
 const weekdaySlots = [
   ['11:00', '11:45'],
   ['11:45', '12:30'],
@@ -71,6 +72,8 @@ function App() {
   const [paymentForm, setPaymentForm] = useState({ precioBase: '', metodoPago: 'efectivo' })
   const [reportData, setReportData] = useState(null)
   const [cashData, setCashData] = useState(null)
+  const [tipData, setTipData] = useState(null)
+  const [paymentBenefit, setPaymentBenefit] = useState(null)
 
   const api = useCallback(async (path, options = {}) => {
     const response = await fetch(`${API_URL}${path}`, {
@@ -128,8 +131,12 @@ function App() {
         const [income, occupancy] = await Promise.all([api('/reportes/ingresos'), api('/reportes/ocupacion')])
         setReportData({ income, occupancy })
       }
-      const today = new Date().toISOString().slice(0, 10)
-      setCashData(await api(`/reportes/corte-caja?fecha=${today}`))
+      if (user?.role === 'barbero') {
+        setTipData(await api('/reportes/propinas'))
+      } else {
+        const today = new Date().toISOString().slice(0, 10)
+        setCashData(await api(`/reportes/corte-caja?fecha=${today}`))
+      }
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -148,7 +155,7 @@ function App() {
   }, [activeView, loadInventory, token, user])
 
   useEffect(() => {
-    if (!token || !user || !['reportes', 'caja'].includes(activeView)) return undefined
+    if (!token || !user || !['reportes', 'caja', 'propinas'].includes(activeView)) return undefined
     const timer = setTimeout(() => { void loadReports() }, 0)
     return () => clearTimeout(timer)
   }, [activeView, loadReports, token, user])
@@ -242,14 +249,42 @@ function App() {
 
   const handleComplete = async (event) => {
     event.preventDefault()
+    setError('')
+    setNotice('')
     try {
-      const response = await api(`/citas/${completingCita._id}/completar`, { method: 'PATCH', body: JSON.stringify({ precioBase: Number(paymentForm.precioBase), metodoPago: paymentForm.metodoPago }) })
+      const response = await api(`/citas/${completingCita._id}/completar`, { method: 'PATCH', body: JSON.stringify({ precioBase: Number(paymentForm.precioBase), metodoPago: paymentForm.metodoPago, propina: Number(paymentForm.propina || 0) }) })
       setNotice(response.cita.beneficioAplicado ? `Cobro registrado: ${response.cita.beneficioAplicado}` : 'Cobro registrado correctamente')
       setCompletingCita(null)
       await loadDashboard()
     } catch (requestError) {
       setError(requestError.message)
     }
+  }
+
+  const handleCloseTurn = async () => {
+    try {
+      const fecha = new Date().toISOString().slice(0, 10)
+      await api('/reportes/corte-caja/cerrar', { method: 'POST', body: JSON.stringify({ fecha }) })
+      await loadReports()
+      setNotice('Turno cerrado correctamente. Los totales de este turno quedaron en cero.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  const handleOpenComplete = async (cita) => {
+    setError('')
+    const defaultPrice = SERVICE_PRICES[cita.servicio] || 0
+    let benefit = null
+    try {
+      const response = await api(`/clientes/telefono/${encodeURIComponent(cita.clienteTelefono)}`)
+      benefit = response.cliente.beneficioLealtad ? { label: response.cliente.beneficioLealtad } : null
+    } catch (requestError) {
+      if (requestError.message !== 'Cliente no encontrado') setError(requestError.message)
+    }
+    setPaymentBenefit(benefit)
+    setCompletingCita(cita)
+    setPaymentForm({ precioBase: defaultPrice, metodoPago: 'efectivo', propina: 0 })
   }
 
   if (!token || !user) {
@@ -286,11 +321,13 @@ function App() {
     const nextSlot = nextSlots[0] || ['', '']
     setForm({ ...nextForm, horaInicio: nextSlot[0], horaFin: nextSlot[1] })
   }
+  const calculatedPaymentTotal = paymentBenefit?.label?.includes('20%') ? Number((Number(paymentForm.precioBase) * 0.8).toFixed(2)) : paymentBenefit?.label?.includes('35%') ? Number((Number(paymentForm.precioBase) * 0.65).toFixed(2)) : paymentBenefit?.label?.includes('gratis') && paymentBenefit?.label?.includes('12vo') ? 0 : Number(paymentForm.precioBase || 0)
 
   return <main className="app-shell">
-    <header className="topbar"><div className="brand"><img className="app-logo" src={barberopsLogo} alt="BarberOps" /></div><div className="topbar-actions">{isStaff && <nav className="view-nav"><button className={activeView === 'agenda' ? 'active' : ''} onClick={() => setActiveView('agenda')}>Agenda</button><button className={activeView === 'inventario' ? 'active' : ''} onClick={() => setActiveView('inventario')}>Inventario</button><button className={activeView === 'caja' ? 'active' : ''} onClick={() => setActiveView('caja')}>Corte de caja</button>{user.role === 'admin' && <button className={activeView === 'reportes' ? 'active' : ''} onClick={() => setActiveView('reportes')}>Reportes</button>}</nav>}<div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></div></header>
+    <header className="topbar"><div className="brand"><img className="app-logo" src={barberopsLogo} alt="BarberOps" /></div><div className="topbar-actions">{isStaff ? <nav className="view-nav"><button className={activeView === 'agenda' ? 'active' : ''} onClick={() => setActiveView('agenda')}>Agenda</button><button className={activeView === 'inventario' ? 'active' : ''} onClick={() => setActiveView('inventario')}>Inventario</button><button className={activeView === 'caja' ? 'active' : ''} onClick={() => setActiveView('caja')}>Corte de caja</button>{user.role === 'admin' && <button className={activeView === 'reportes' ? 'active' : ''} onClick={() => setActiveView('reportes')}>Reportes</button>}</nav> : <nav className="view-nav"><button className={activeView === 'agenda' ? 'active' : ''} onClick={() => setActiveView('agenda')}>Mi Agenda</button><button className={activeView === 'propinas' ? 'active' : ''} onClick={() => setActiveView('propinas')}>Propinas</button></nav>}<div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></div></header>
     {activeView === 'agenda' || !isStaff ? <section className="content">
       <div className="page-heading"><div><p className="eyebrow">{isStaff ? 'Control de operaciones' : 'Vista personal'}</p><h1>{isStaff ? 'Agenda' : 'Mi Agenda'}</h1><p className="subheading">{isStaff ? 'Programa las citas de tus clientes con tus barberos' : 'Tus próximas citas asignadas, siempre a la vista.'}</p></div>{isStaff && <button className="primary-button" onClick={() => setShowForm((current) => !current)}>{showForm ? 'Cerrar formulario' : '+ Nueva cita'}</button>}</div>
+      {!isStaff && tipData && <div className="tip-summary"><span>Propinas de esta semana</span><strong>${tipData.total.toFixed(2)}</strong></div>}
       {error && <div className="feedback error-message">{error}</div>}
       {notice && <div className="feedback success-message">{notice}</div>}
       {showForm && isStaff && <form className="appointment-form" onSubmit={handleCreate}>
@@ -301,7 +338,7 @@ function App() {
           <label>Barbero<select value={form.barbero} onChange={(event) => updateSchedule('barbero', event.target.value)} required><option value="">Selecciona un barbero</option>{barberos.map((barbero) => <option key={barbero._id} value={barbero._id}>{barbero.name}</option>)}</select></label>
           <label>Servicio<select value={form.servicio} onChange={(event) => updateForm('servicio', event.target.value)}><option>Corte</option><option>Corte y barba</option><option>Barba</option></select></label>
           <label>Fecha<input type="date" value={form.fecha} onChange={(event) => updateSchedule('fecha', event.target.value)} required /></label>
-          <label>Horario disponible<select value={form.horaInicio} onChange={(event) => updateForm('horaInicio', event.target.value)} required disabled={!availableSlots.length}><option value="">{availableSlots.length ? 'Selecciona un horario' : 'Sin horarios disponibles'}</option>{availableSlots.map(([start, end]) => <option key={start} value={start}>{start} - {end}</option>)}</select></label>
+          <label>Horario disponible<select value={form.horaInicio} onChange={(event) => { const selectedSlot = availableSlots.find(([start]) => start === event.target.value); setForm((current) => ({ ...current, horaInicio: selectedSlot?.[0] || '', horaFin: selectedSlot?.[1] || '' })) }} required disabled={!availableSlots.length}><option value="">{availableSlots.length ? 'Selecciona un horario' : 'Sin horarios disponibles'}</option>{availableSlots.map(([start, end]) => <option key={start} value={start}>{start} - {end}</option>)}</select></label>
           <label>Duración<input value="45 minutos" readOnly /></label>
           <label className="wide">Notas<textarea value={form.notas} onChange={(event) => updateForm('notas', event.target.value)} rows="2" placeholder="Preferencias o detalles importantes" /></label>
         </div>
@@ -311,17 +348,18 @@ function App() {
         <button className="primary-button" type="submit" disabled={!hasSelectedSlot}>Guardar cita</button>
       </form>}
       <div className="agenda-toolbar"><div><h2>{formatDate(form.fecha)}</h2><p>{visibleCitas.length} {visibleCitas.length === 1 ? 'cita activa' : 'citas activas'}</p></div><input aria-label="Filtrar fecha" type="date" value={form.fecha} onChange={(event) => updateForm('fecha', event.target.value)} /></div>
-      {loading ? <div className="empty-state"><span className="loader" />Cargando agenda...</div> : isStaff ? <div className="calendar-scroll"><div className="calendar-grid" style={{ '--barber-count': Math.max(barberos.length, 1) }}><div className="calendar-corner">Hora</div>{barberos.map((barbero) => <div className="calendar-barber" key={barbero._id}><span>Barbero</span><strong>{barbero.name}</strong></div>)}{daySlots.length === 0 ? <div className="calendar-closed">Domingo cerrado</div> : daySlots.map(([start, end]) => <div className="calendar-row" key={start}><div className="calendar-time"><strong>{start}</strong><span>{end}</span></div>{barberos.map((barbero) => { const cita = appointmentFor(barbero._id, start); return <div className="calendar-cell" key={`${barbero._id}-${start}`}>{cita && <article className="calendar-appointment"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio}</p><small>{cita.clienteTelefono}</small>{cita.estado === 'agendada' && <button className="complete-button" onClick={() => { setCompletingCita(cita); setPaymentForm({ precioBase: '', metodoPago: 'efectivo' }) }}>Completar y cobrar</button>}<button className="cancel-button" onClick={() => handleCancel(cita._id)}>Cancelar</button></article>}</div> })}</div>)}</div></div> : visibleCitas.length === 0 ? <div className="empty-state"><strong>La agenda está despejada.</strong><span>No tienes citas asignadas para esta fecha.</span></div> : <div className="appointment-list">{visibleCitas.map((cita) => <article className="appointment-row" key={cita._id}><div className="time-block"><strong>{cita.horaInicio}</strong><span>{cita.horaFin}</span></div><div className="appointment-info"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio} <span>·</span> {cita.clienteTelefono}</p>{cita.notas && <small>{cita.notas}</small>}</div><div className="barber-info"><span>Barbero</span><strong>{cita.barbero?.name || 'Sin asignar'}</strong></div></article>)}</div>}
-    </section> : <section className="content inventory-content">
+      {loading ? <div className="empty-state"><span className="loader" />Cargando agenda...</div> : isStaff ? <div className="calendar-scroll"><div className="calendar-grid" style={{ '--barber-count': Math.max(barberos.length, 1) }}><div className="calendar-corner">Hora</div>{barberos.map((barbero) => <div className="calendar-barber" key={barbero._id}><span>Barbero</span><strong>{barbero.name}</strong></div>)}{daySlots.length === 0 ? <div className="calendar-closed">Domingo cerrado</div> : daySlots.map(([start, end]) => <div className="calendar-row" key={start}><div className="calendar-time"><strong>{start}</strong><span>{end}</span></div>{barberos.map((barbero) => { const cita = appointmentFor(barbero._id, start); return <div className="calendar-cell" key={`${barbero._id}-${start}`}>{cita && <article className="calendar-appointment"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio}</p><small>{cita.clienteTelefono}</small>{cita.estado === 'agendada' && <button className="complete-button" onClick={() => handleOpenComplete(cita)}>Completar y cobrar</button>}{cita.estado === 'agendada' && <button className="cancel-button" onClick={() => handleCancel(cita._id)}>Cancelar</button>}</article>}</div> })}</div>)}</div></div> : visibleCitas.length === 0 ? <div className="empty-state"><strong>La agenda está despejada.</strong><span>No tienes citas asignadas para esta fecha.</span></div> : <div className="appointment-list">{visibleCitas.map((cita) => <article className="appointment-row" key={cita._id}><div className="time-block"><strong>{cita.horaInicio}</strong><span>{cita.horaFin}</span></div><div className="appointment-info"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio} <span>·</span> {cita.clienteTelefono}</p>{cita.notas && <small>{cita.notas}</small>}</div><div className="barber-info"><span>Barbero</span><strong>{cita.barbero?.name || 'Sin asignar'}</strong></div></article>)}</div>}
+    </section> : activeView === 'inventario' ? <section className="content inventory-content">
       <div className="page-heading"><div><p className="eyebrow">Control de existencias</p><h1>Inventario</h1><p className="subheading">Separa los insumos de trabajo de los productos disponibles para venta.</p></div></div>
       {error && <div className="feedback error-message">{error}</div>}
       {notice && <div className="feedback success-message">{notice}</div>}
       <div className="inventory-tabs"><button className={inventoryType === 'insumo' ? 'active' : ''} onClick={() => setInventoryType('insumo')}>Insumos</button><button className={inventoryType === 'venta' ? 'active' : ''} onClick={() => setInventoryType('venta')}>Productos de venta</button></div>
       <div className="inventory-layout"><div className="inventory-list">{inventoryLoading ? <div className="empty-state"><span className="loader" />Cargando inventario...</div> : inventoryProducts.length === 0 ? <div className="empty-state"><strong>No hay productos en esta vista.</strong><span>Agrega productos desde el API para comenzar.</span></div> : inventoryProducts.map((producto) => <article className={`inventory-card ${producto.necesitaReabastecimiento ? 'low-stock' : ''}`} key={producto._id}><div><span className="inventory-type">{producto.tipo === 'insumo' ? 'Insumo' : 'Venta'}</span><h2>{producto.nombre}</h2><p>{producto.stockActual} {producto.unidad} disponibles · mínimo {producto.stockMinimo}</p></div><strong className="stock-number">{producto.stockActual}</strong>{producto.necesitaReabastecimiento && <span className="restock-warning">Necesita reabastecimiento</span>}</article>)}</div><form className="movement-form" onSubmit={handleMovement}><p className="eyebrow">Trazabilidad</p><h2>Registrar movimiento</h2><label>Producto<select value={movementForm.productoId} onChange={(event) => setMovementForm({ ...movementForm, productoId: event.target.value })} required><option value="">Selecciona un producto</option>{inventoryProducts.map((producto) => <option key={producto._id} value={producto._id}>{producto.nombre}</option>)}</select></label><label>Tipo de movimiento<select value={movementForm.tipoMovimiento} onChange={(event) => setMovementForm({ ...movementForm, tipoMovimiento: event.target.value, gratis: false })}><option value="entrada">Entrada</option><option value="salida_uso">Salida por uso</option>{inventoryType === 'venta' && <option value="venta">Venta</option>}</select></label><label>Cantidad<input type="number" min="1" value={movementForm.cantidad} onChange={(event) => setMovementForm({ ...movementForm, cantidad: event.target.value })} required /></label>{movementForm.tipoMovimiento === 'venta' && <><label>Teléfono del cliente (opcional)<input value={movementForm.clienteTelefono} onChange={(event) => setMovementForm({ ...movementForm, clienteTelefono: event.target.value })} /></label><label>Nombre del cliente<input value={movementForm.clienteNombre} onChange={(event) => setMovementForm({ ...movementForm, clienteNombre: event.target.value })} /></label><label className="check-label"><input type="checkbox" checked={movementForm.gratis} onChange={(event) => setMovementForm({ ...movementForm, gratis: event.target.checked })} /> Producto gratis por lealtad</label></>}<button className="primary-button" type="submit" disabled={!movementForm.productoId}>Guardar movimiento</button></form></div>
-    </section>}
-    {activeView === 'reportes' && user.role === 'admin' && <section className="content report-content"><div className="page-heading"><div><p className="eyebrow">Visión del negocio</p><h1>Reportes</h1><p className="subheading">Ingresos y ocupación de la barbería.</p></div></div>{error && <div className="feedback error-message">{error}</div>}{reportData ? <div className="report-grid"><article className="metric-card"><span>Ingresos totales</span><strong>${reportData.income.ingresosTotales.toFixed(2)}</strong></article><article className="metric-card"><span>Ingresos por citas</span><strong>${reportData.income.ingresosCitas.toFixed(2)}</strong></article><article className="metric-card"><span>Ventas de productos</span><strong>${reportData.income.ingresosProductos.toFixed(2)}</strong></article><section className="report-table"><h2>Ingresos por barbero</h2>{Object.entries(reportData.income.porBarbero).map(([name, amount]) => <p key={name}><span>{name}</span><strong>${amount.toFixed(2)}</strong></p>)}</section><section className="report-table"><h2>Ocupación</h2>{Object.entries(reportData.occupancy.porBarbero).map(([name, values]) => <p key={name}><span>{name}</span><strong>{values.completadas} completadas · {values.agendadas} pendientes · {values.canceladas} canceladas</strong></p>)}</section></div> : <div className="empty-state"><span className="loader" />Cargando reportes...</div>}</section>}
-    {activeView === 'caja' && <section className="content report-content"><div className="page-heading"><div><p className="eyebrow">Cierre del día</p><h1>Corte de caja</h1><p className="subheading">Citas cobradas registradas durante tu turno.</p></div></div>{cashData ? <div className="report-grid"><article className="metric-card"><span>Total efectivo</span><strong>${cashData.totalEfectivo.toFixed(2)}</strong></article><article className="metric-card"><span>Total transferencia</span><strong>${cashData.totalTransferencia.toFixed(2)}</strong></article>{cashData.turnos.map((turno, index) => <section className="report-table" key={turno.registradoPor?._id || index}><h2>{turno.registradoPor?.name || 'Turno'}</h2><p><span>Efectivo</span><strong>${turno.totalEfectivo.toFixed(2)}</strong></p><p><span>Transferencia</span><strong>${turno.totalTransferencia.toFixed(2)}</strong></p></section>)}</div> : <div className="empty-state"><span className="loader" />Cargando corte...</div>}</section>}
-    {completingCita && <div className="modal-backdrop"><form className="payment-modal" onSubmit={handleComplete}><p className="eyebrow">Cerrar cita</p><h2>Completar y cobrar</h2><p>{completingCita.clienteNombre} · {completingCita.servicio}</p><label>Precio base<input type="number" min="0" step="0.01" value={paymentForm.precioBase} onChange={(event) => setPaymentForm({ ...paymentForm, precioBase: event.target.value })} required /></label><label>Método de pago<select value={paymentForm.metodoPago} onChange={(event) => setPaymentForm({ ...paymentForm, metodoPago: event.target.value })}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setCompletingCita(null)}>Cancelar</button><button className="primary-button" type="submit">Registrar cobro</button></div></form></div>}
+    </section> : null}
+    {activeView === 'reportes' && user.role === 'admin' && <section className="content report-content"><div className="page-heading"><div><p className="eyebrow">Visión del negocio</p><h1>Reportes</h1><p className="subheading">Ingresos y ocupación de la barbería.</p></div></div>{error && <div className="feedback error-message">{error}</div>}{reportData ? <div className="report-grid"><article className="metric-card"><span>Ingresos totales</span><strong>${reportData.income.ingresosTotales.toFixed(2)}</strong></article><article className="metric-card"><span>Ingresos por citas</span><strong>${reportData.income.ingresosCitas.toFixed(2)}</strong></article><article className="metric-card"><span>Ventas de productos</span><strong>${reportData.income.ingresosProductos.toFixed(2)}</strong></article><section className="report-table"><h2>Ingresos por barbero</h2>{Object.entries(reportData.income.porBarbero).map(([name, amount]) => <p key={name}><span>{name}</span><strong>${amount.toFixed(2)}</strong></p>)}</section><section className="report-table"><h2>Ingresos por recepcionista</h2>{Object.entries(reportData.income.porRecepcionista || {}).map(([name, amount]) => <p key={name}><span>{name}</span><strong>${amount.toFixed(2)}</strong></p>)}</section><section className="report-table"><h2>Ocupación</h2>{Object.entries(reportData.occupancy.porBarbero).map(([name, values]) => <p key={name}><span>{name}</span><strong>{values.completadas} completadas · {values.agendadas} pendientes · {values.canceladas} canceladas</strong></p>)}</section></div> : <div className="empty-state"><span className="loader" />Cargando reportes...</div>}</section>}
+    {activeView === 'caja' && <section className="content report-content"><div className="page-heading"><div><p className="eyebrow">Cierre del día</p><h1>Corte de caja</h1><p className="subheading">Citas cobradas registradas durante tu turno.</p></div><button className="primary-button" onClick={() => { void handleCloseTurn() }}>Cerrar turno</button></div>{cashData ? <div className="report-grid"><article className="metric-card"><span>Total efectivo</span><strong>${cashData.totalEfectivo.toFixed(2)}</strong></article><article className="metric-card"><span>Total transferencia</span><strong>${cashData.totalTransferencia.toFixed(2)}</strong></article>{cashData.turnos.map((turno, index) => <section className="report-table" key={turno.registradoPor?._id || index}><h2>{turno.registradoPor?.name || 'Turno'}</h2><p><span>Efectivo</span><strong>${turno.totalEfectivo.toFixed(2)}</strong></p><p><span>Transferencia</span><strong>${turno.totalTransferencia.toFixed(2)}</strong></p></section>)}</div> : <div className="empty-state"><span className="loader" />Cargando corte...</div>}</section>}
+    {activeView === 'propinas' && user.role === 'barbero' && <section className="content report-content"><div className="page-heading"><div><p className="eyebrow">Resumen semanal</p><h1>Propinas</h1><p className="subheading">Propinas acumuladas de lunes a domingo.</p></div></div>{tipData ? <div className="report-grid"><article className="metric-card"><span>Propinas de esta semana</span><strong>${tipData.total.toFixed(2)}</strong></article><section className="report-table"><h2>Periodo</h2><p><span>Desde</span><strong>{tipData.fechaInicio}</strong></p><p><span>Hasta</span><strong>{tipData.fechaFin}</strong></p></section></div> : <div className="empty-state"><span className="loader" />Cargando propinas...</div>}</section>}
+    {completingCita && <div className="modal-backdrop"><form className="payment-modal" onSubmit={handleComplete}><p className="eyebrow">Cerrar cita</p><h2>Completar y cobrar</h2><p>{completingCita.clienteNombre} · {completingCita.servicio}</p>{error && <p className="error-message">{error}</p>}<div className="price-reference"><span>Corte $250</span><span>Corte y barba $320</span><span>Barba $150</span></div>{paymentBenefit && <div className="benefit-notice">Beneficio: {paymentBenefit.label}<strong>Precio final estimado: ${calculatedPaymentTotal.toFixed(2)}</strong></div>}<label>Precio base<input type="number" min="0" step="0.01" value={paymentForm.precioBase} onChange={(event) => setPaymentForm({ ...paymentForm, precioBase: event.target.value })} required /></label><label>Propina para el barbero (opcional)<input type="number" min="0" step="0.01" value={paymentForm.propina} onChange={(event) => setPaymentForm({ ...paymentForm, propina: event.target.value })} /></label><label>Método de pago<select value={paymentForm.metodoPago} onChange={(event) => setPaymentForm({ ...paymentForm, metodoPago: event.target.value })}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setCompletingCita(null)}>Cancelar</button><button className="primary-button" type="submit">Registrar cobro</button></div></form></div>}
   </main>
 }
 

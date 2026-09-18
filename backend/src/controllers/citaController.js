@@ -1,7 +1,9 @@
 import mongoose from 'mongoose'
+import { priceForService } from '../config/precios.js'
 import Cliente from '../models/Cliente.js'
 import Cita from '../models/Cita.js'
-import { loyaltyBenefitFor, recordClientVisit } from '../services/clienteService.js'
+import { findOrCreateCliente, loyaltyBenefitFor, recordClientVisit } from '../services/clienteService.js'
+import { notificationService } from '../services/notificacionService.js'
 import User from '../models/User.js'
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
@@ -48,7 +50,7 @@ const hasOverlap = async ({ barbero, fecha, horaInicio, horaFin, excludeId }) =>
   const query = {
     barbero,
     fecha,
-    estado: { $ne: 'cancelada' },
+    estado: 'agendada',
     horaInicio: { $lt: horaFin },
     horaFin: { $gt: horaInicio },
   }
@@ -69,9 +71,14 @@ export const createCita = async (req, res) => {
   const incluyoCorte = req.body.incluyoCorte === undefined ? serviceIncludesCut(servicio || '') : req.body.incluyoCorte === true
   const normalizedDate = normalizeDate(fecha)
 
-  if (!clienteNombre || !clienteTelefono || !barbero || !servicio || !normalizedDate || !validateTimeRange(normalizedDate, horaInicio, horaFin)) {
-    return sendInvalidData(res, 'Los datos de la cita no son válidos')
-  }
+  if (!clienteNombre) return sendInvalidData(res, 'El nombre del cliente es requerido')
+  if (!clienteTelefono) return sendInvalidData(res, 'El teléfono del cliente es requerido')
+  if (!barbero) return sendInvalidData(res, 'El barbero es requerido')
+  if (!servicio) return sendInvalidData(res, 'El servicio es requerido')
+  if (!normalizedDate) return sendInvalidData(res, 'La fecha debe tener formato YYYY-MM-DD y ser válida')
+  if (!timePattern.test(horaInicio) || !timePattern.test(horaFin)) return sendInvalidData(res, 'Las horas deben tener formato HH:mm')
+  if (minutesFromTime(horaFin) - minutesFromTime(horaInicio) !== appointmentDurationMinutes) return sendInvalidData(res, 'Cada cita debe durar exactamente 45 minutos')
+  if (!getWorkingWindows(normalizedDate).some(([start, end]) => horaInicio >= start && horaFin <= end)) return sendInvalidData(res, 'El horario está fuera de la jornada laboral')
 
   if (!(await findBarber(barbero))) return sendInvalidData(res, 'El usuario seleccionado no es un barbero válido')
   if (await hasOverlap({ barbero, fecha: normalizedDate, horaInicio, horaFin })) {
@@ -92,6 +99,11 @@ export const createCita = async (req, res) => {
   })
 
   await recordClientVisit({ cita, clienteNombre, clienteTelefono, barbero, servicio, incluyoCorte })
+  try {
+    await notificationService.enviarConfirmacion(cita)
+  } catch (error) {
+    console.error('No se pudo enviar la confirmación de la cita', error)
+  }
 
   return res.status(201).json({ cita: await Cita.findById(cita._id).populate('barbero', 'name email role').populate('creadoPor', 'name email role') })
 }
@@ -164,8 +176,10 @@ export const cancelCita = async (req, res) => {
 export const completeCita = async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: 'Cita no encontrada' })
 
-  const { precioBase, metodoPago } = req.body
-  if (typeof precioBase !== 'number' || !Number.isFinite(precioBase) || precioBase < 0
+  const { metodoPago } = req.body
+  const precioBase = req.body.precioBase === undefined ? null : Number(req.body.precioBase)
+  const propina = req.body.propina === undefined ? 0 : Number(req.body.propina)
+  if ((precioBase !== null && (!Number.isFinite(precioBase) || precioBase < 0)) || !Number.isFinite(propina) || propina < 0
     || !['efectivo', 'transferencia'].includes(metodoPago)) {
     return res.status(400).json({ message: 'Precio y método de pago no son válidos' })
   }
@@ -176,8 +190,21 @@ export const completeCita = async (req, res) => {
     return res.status(400).json({ message: 'La cita ya no puede completarse' })
   }
 
-  const cliente = await Cliente.findOne({ telefono: cita.clienteTelefono })
-  if (!cliente) return res.status(400).json({ message: 'No se encontró la ficha del cliente' })
+  const resolvedPrecioBase = precioBase === null ? priceForService(cita.servicio) : precioBase
+  if (resolvedPrecioBase <= 0) return res.status(400).json({ message: 'El precio base debe ser mayor que cero o indicar un servicio con precio configurado' })
+
+  let cliente = await Cliente.findOne({ telefono: cita.clienteTelefono })
+  if (!cliente) {
+    await recordClientVisit({
+      cita,
+      clienteNombre: cita.clienteNombre,
+      clienteTelefono: cita.clienteTelefono,
+      barbero: cita.barbero,
+      servicio: cita.servicio,
+      incluyoCorte: cita.incluyoCorte,
+    })
+    cliente = await findOrCreateCliente({ nombre: cita.clienteNombre, telefono: cita.clienteTelefono })
+  }
   if (metodoPago === 'transferencia' && (cliente.historialVisitas.length < 5 || cliente.metodoPagoRestringido)) {
     const reason = cliente.metodoPagoRestringido ? 'tiene un adeudo pendiente' : 'tiene menos de 5 visitas registradas'
     return res.status(400).json({ message: `No puede pagar por transferencia porque ${reason}` })
@@ -185,10 +212,11 @@ export const completeCita = async (req, res) => {
 
   const totalCortes = cliente.historialVisitas.filter((visit) => visit.incluyoCorte).length
   const benefit = loyaltyBenefitFor(cliente.contadorCortes, totalCortes)
-  cita.precioBase = precioBase
-  cita.precioFinal = benefit ? Number((precioBase * benefit.priceMultiplier).toFixed(2)) : precioBase
+  cita.precioBase = resolvedPrecioBase
+  cita.precioFinal = benefit ? Number((resolvedPrecioBase * benefit.priceMultiplier).toFixed(2)) : resolvedPrecioBase
   cita.metodoPago = metodoPago
   cita.beneficioAplicado = benefit?.label
+  cita.propina = propina
   cita.estado = 'completada'
   await cita.save()
 

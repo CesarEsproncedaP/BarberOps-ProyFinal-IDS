@@ -103,6 +103,13 @@ describe('citas integration', () => {
     expect(response.body.message).toMatch(/ya tiene una cita/i)
   })
 
+  it('allows a new appointment after a previous appointment is completed', async () => {
+    const first = await createAppointment(recepcionistaToken)
+    const completed = await request(app).patch(`/api/citas/${first.body.cita._id}/completar`).set('Authorization', `Bearer ${recepcionistaToken}`).send({ precioBase: 250, metodoPago: 'efectivo' })
+    const second = await createAppointment(recepcionistaToken, { ...appointmentData(), horaInicio: '11:45', horaFin: '12:30' })
+    expect(second.status).toBe(201)
+  })
+
   it('rejects an invalid barber', async () => {
     const response = await createAppointment(recepcionistaToken, {
       ...appointmentData(),

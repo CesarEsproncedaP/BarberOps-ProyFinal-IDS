@@ -23,6 +23,7 @@ const citaSchema = new mongoose.Schema(
     precioFinal: { type: Number, min: 0 },
     metodoPago: { type: String, enum: ['efectivo', 'transferencia'] },
     beneficioAplicado: { type: String, trim: true },
+    propina: { type: Number, min: 0, default: 0 },
   },
   { timestamps: true },
 )

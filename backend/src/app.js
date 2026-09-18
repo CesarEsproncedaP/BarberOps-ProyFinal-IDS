@@ -7,6 +7,7 @@ import citaRoutes from './routes/citaRoutes.js'
 import clienteRoutes from './routes/clienteRoutes.js'
 import inventarioRoutes from './routes/inventarioRoutes.js'
 import reporteRoutes from './routes/reporteRoutes.js'
+import notificacionRoutes from './routes/notificacionRoutes.js'
 
 const app = express()
 
@@ -51,6 +52,7 @@ app.use('/api/citas', citaRoutes)
 app.use('/api/clientes', clienteRoutes)
 app.use('/api/inventario', inventarioRoutes)
 app.use('/api/reportes', reporteRoutes)
+app.use('/api/notificaciones', notificacionRoutes)
 
 app.use((error, req, res, next) => {
   console.error(error)

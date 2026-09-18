@@ -142,6 +142,12 @@ textarea { resize: vertical; }
 .empty-state strong { color: var(--ink); font: 700 20px 'Manrope', sans-serif; }
 .loader { width: 22px; height: 22px; border: 2px solid var(--line); border-top-color: var(--orange); border-radius: 50%; animation: spin .7s linear infinite; }
 .feedback { padding: 12px 15px; margin: -25px 0 22px; font-size: 13px; }
+.tip-summary { display: flex; justify-content: space-between; align-items: center; max-width: 420px; margin: -22px 0 28px; padding: 15px 18px; border-left: 3px solid var(--green); background: #edf5ef; color: var(--muted); font-size: 13px; }
+.tip-summary strong { color: var(--green); font: 800 22px 'Manrope', sans-serif; }
+.price-reference { display: flex; flex-wrap: wrap; gap: 7px; color: var(--muted); font-size: 11px; }
+.price-reference span { padding: 5px 7px; background: #f8f5ef; }
+.benefit-notice { display: grid; gap: 5px; padding: 11px 12px; border-left: 3px solid var(--orange); background: #fff4ed; color: var(--orange-dark); font-size: 12px; }
+.benefit-notice strong { color: var(--ink); }
 .error-message { color: #a53e28; background: #fff0eb; }
 .success-message { color: var(--green); background: #e3f0e7; }
 
