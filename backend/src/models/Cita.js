@@ -19,6 +19,10 @@ const citaSchema = new mongoose.Schema(
     },
     creadoPor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     notas: { type: String, trim: true },
+    precioBase: { type: Number, min: 0 },
+    precioFinal: { type: Number, min: 0 },
+    metodoPago: { type: String, enum: ['efectivo', 'transferencia'] },
+    beneficioAplicado: { type: String, trim: true },
   },
   { timestamps: true },
 )

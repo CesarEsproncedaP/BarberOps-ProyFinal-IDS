@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
+import Cliente from '../models/Cliente.js'
 import Cita from '../models/Cita.js'
-import { recordClientVisit } from '../services/clienteService.js'
+import { loyaltyBenefitFor, recordClientVisit } from '../services/clienteService.js'
 import User from '../models/User.js'
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
@@ -157,5 +158,39 @@ export const cancelCita = async (req, res) => {
 
   cita.estado = 'cancelada'
   await cita.save()
+  return res.json({ cita })
+}
+
+export const completeCita = async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: 'Cita no encontrada' })
+
+  const { precioBase, metodoPago } = req.body
+  if (typeof precioBase !== 'number' || !Number.isFinite(precioBase) || precioBase < 0
+    || !['efectivo', 'transferencia'].includes(metodoPago)) {
+    return res.status(400).json({ message: 'Precio y método de pago no son válidos' })
+  }
+
+  const cita = await Cita.findById(req.params.id)
+  if (!cita) return res.status(404).json({ message: 'Cita no encontrada' })
+  if (cita.estado === 'completada' || cita.estado === 'cancelada') {
+    return res.status(400).json({ message: 'La cita ya no puede completarse' })
+  }
+
+  const cliente = await Cliente.findOne({ telefono: cita.clienteTelefono })
+  if (!cliente) return res.status(400).json({ message: 'No se encontró la ficha del cliente' })
+  if (metodoPago === 'transferencia' && (cliente.historialVisitas.length < 5 || cliente.metodoPagoRestringido)) {
+    const reason = cliente.metodoPagoRestringido ? 'tiene un adeudo pendiente' : 'tiene menos de 5 visitas registradas'
+    return res.status(400).json({ message: `No puede pagar por transferencia porque ${reason}` })
+  }
+
+  const totalCortes = cliente.historialVisitas.filter((visit) => visit.incluyoCorte).length
+  const benefit = loyaltyBenefitFor(cliente.contadorCortes, totalCortes)
+  cita.precioBase = precioBase
+  cita.precioFinal = benefit ? Number((precioBase * benefit.priceMultiplier).toFixed(2)) : precioBase
+  cita.metodoPago = metodoPago
+  cita.beneficioAplicado = benefit?.label
+  cita.estado = 'completada'
+  await cita.save()
+
   return res.json({ cita })
 }

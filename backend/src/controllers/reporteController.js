@@ -1,0 +1,87 @@
+import MovimientoInventario from '../models/MovimientoInventario.js'
+import Cita from '../models/Cita.js'
+
+const datePattern = /^\d{4}-\d{2}-\d{2}$/
+
+const parseDate = (value) => {
+  if (!value || !datePattern.test(value)) return null
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const getRange = (fechaInicio, fechaFin) => {
+  const now = new Date()
+  const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  const defaultEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+  const start = fechaInicio ? parseDate(fechaInicio) : defaultStart
+  const endDate = fechaFin ? parseDate(fechaFin) : new Date(defaultEnd.getTime() - 1)
+  const end = fechaFin ? new Date(parseDate(fechaFin).getTime() + 86400000) : defaultEnd
+  if (!start || !endDate || start >= end) return null
+  return { start, end }
+}
+
+const dateQuery = (range) => ({ fecha: { $gte: range.start, $lt: range.end } })
+
+export const ingresos = async (req, res) => {
+  const range = getRange(req.query.fechaInicio, req.query.fechaFin)
+  if (!range) return res.status(400).json({ message: 'El rango de fechas no es válido' })
+
+  const citas = await Cita.find({ ...dateQuery(range), estado: 'completada' })
+    .populate('barbero', 'name email role')
+  const movimientos = await MovimientoInventario.find({ ...dateQuery(range), tipoMovimiento: 'venta', gratis: false })
+    .populate('producto', 'nombre precio')
+
+  const porBarbero = {}
+  const porServicio = {}
+  for (const cita of citas) {
+    const barberName = cita.barbero?.name || 'Sin barbero'
+    porBarbero[barberName] = (porBarbero[barberName] || 0) + (cita.precioFinal || 0)
+    porServicio[cita.servicio] = (porServicio[cita.servicio] || 0) + (cita.precioFinal || 0)
+  }
+  const ingresosCitas = citas.reduce((total, cita) => total + (cita.precioFinal || 0), 0)
+  const ingresosProductos = movimientos.reduce((total, movimiento) => total + ((movimiento.producto?.precio || 0) * movimiento.cantidad), 0)
+
+  return res.json({
+    rango: { fechaInicio: range.start.toISOString().slice(0, 10), fechaFin: new Date(range.end.getTime() - 86400000).toISOString().slice(0, 10) },
+    ingresosCitas,
+    ingresosProductos,
+    ingresosTotales: ingresosCitas + ingresosProductos,
+    porBarbero,
+    porServicio,
+  })
+}
+
+export const ocupacion = async (req, res) => {
+  const range = getRange(req.query.fechaInicio, req.query.fechaFin)
+  if (!range) return res.status(400).json({ message: 'El rango de fechas no es válido' })
+  const citas = await Cita.find(dateQuery(range)).populate('barbero', 'name email role')
+  const porBarbero = {}
+  for (const cita of citas) {
+    const name = cita.barbero?.name || 'Sin barbero'
+    if (!porBarbero[name]) porBarbero[name] = { completadas: 0, canceladas: 0, agendadas: 0 }
+    if (cita.estado === 'completada') porBarbero[name].completadas += 1
+    if (cita.estado === 'cancelada') porBarbero[name].canceladas += 1
+    if (cita.estado === 'agendada') porBarbero[name].agendadas += 1
+  }
+  return res.json({ rango: { fechaInicio: range.start.toISOString().slice(0, 10), fechaFin: new Date(range.end.getTime() - 86400000).toISOString().slice(0, 10) }, porBarbero })
+}
+
+export const corteCaja = async (req, res) => {
+  const date = parseDate(req.query.fecha)
+  if (!date) return res.status(400).json({ message: 'La fecha debe tener formato YYYY-MM-DD' })
+  const nextDate = new Date(date.getTime() + 86400000)
+  const query = { fecha: { $gte: date, $lt: nextDate }, estado: 'completada' }
+  if (req.user.role === 'recepcionista') query.creadoPor = req.user._id
+
+  const citas = await Cita.find(query).populate('creadoPor', 'name email role').populate('barbero', 'name email role')
+  const turnos = {}
+  for (const cita of citas) {
+    const key = cita.creadoPor?._id.toString() || 'sin-registrador'
+    if (!turnos[key]) turnos[key] = { registradoPor: cita.creadoPor, totalEfectivo: 0, totalTransferencia: 0, citas: [] }
+    const amount = cita.precioFinal || 0
+    if (cita.metodoPago === 'transferencia') turnos[key].totalTransferencia += amount
+    else turnos[key].totalEfectivo += amount
+    turnos[key].citas.push(cita)
+  }
+  return res.json({ fecha: req.query.fecha, totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0), totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0), turnos: Object.values(turnos) })
+}

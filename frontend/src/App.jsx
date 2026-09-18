@@ -67,6 +67,10 @@ function App() {
   const [inventoryProducts, setInventoryProducts] = useState([])
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const [movementForm, setMovementForm] = useState({ productoId: '', tipoMovimiento: 'entrada', cantidad: 1, gratis: false, clienteTelefono: '', clienteNombre: '' })
+  const [completingCita, setCompletingCita] = useState(null)
+  const [paymentForm, setPaymentForm] = useState({ precioBase: '', metodoPago: 'efectivo' })
+  const [reportData, setReportData] = useState(null)
+  const [cashData, setCashData] = useState(null)
 
   const api = useCallback(async (path, options = {}) => {
     const response = await fetch(`${API_URL}${path}`, {
@@ -118,6 +122,19 @@ function App() {
     }
   }, [api, inventoryType])
 
+  const loadReports = useCallback(async () => {
+    try {
+      if (user?.role === 'admin') {
+        const [income, occupancy] = await Promise.all([api('/reportes/ingresos'), api('/reportes/ocupacion')])
+        setReportData({ income, occupancy })
+      }
+      const today = new Date().toISOString().slice(0, 10)
+      setCashData(await api(`/reportes/corte-caja?fecha=${today}`))
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }, [api, user])
+
   useEffect(() => {
     if (!token) return undefined
     const timer = setTimeout(() => { void loadDashboard() }, 0)
@@ -129,6 +146,12 @@ function App() {
     const timer = setTimeout(() => { void loadInventory() }, 0)
     return () => clearTimeout(timer)
   }, [activeView, loadInventory, token, user])
+
+  useEffect(() => {
+    if (!token || !user || !['reportes', 'caja'].includes(activeView)) return undefined
+    const timer = setTimeout(() => { void loadReports() }, 0)
+    return () => clearTimeout(timer)
+  }, [activeView, loadReports, token, user])
 
   const handleLogin = async (event) => {
     event.preventDefault()
@@ -217,6 +240,18 @@ function App() {
     }
   }
 
+  const handleComplete = async (event) => {
+    event.preventDefault()
+    try {
+      const response = await api(`/citas/${completingCita._id}/completar`, { method: 'PATCH', body: JSON.stringify({ precioBase: Number(paymentForm.precioBase), metodoPago: paymentForm.metodoPago }) })
+      setNotice(response.cita.beneficioAplicado ? `Cobro registrado: ${response.cita.beneficioAplicado}` : 'Cobro registrado correctamente')
+      setCompletingCita(null)
+      await loadDashboard()
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
   if (!token || !user) {
     return <main className="login-shell">
       <section className="login-panel">
@@ -253,7 +288,7 @@ function App() {
   }
 
   return <main className="app-shell">
-    <header className="topbar"><div className="brand"><img className="app-logo" src={barberopsLogo} alt="BarberOps" /></div><div className="topbar-actions">{isStaff && <nav className="view-nav"><button className={activeView === 'agenda' ? 'active' : ''} onClick={() => setActiveView('agenda')}>Agenda</button><button className={activeView === 'inventario' ? 'active' : ''} onClick={() => setActiveView('inventario')}>Inventario</button></nav>}<div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></div></header>
+    <header className="topbar"><div className="brand"><img className="app-logo" src={barberopsLogo} alt="BarberOps" /></div><div className="topbar-actions">{isStaff && <nav className="view-nav"><button className={activeView === 'agenda' ? 'active' : ''} onClick={() => setActiveView('agenda')}>Agenda</button><button className={activeView === 'inventario' ? 'active' : ''} onClick={() => setActiveView('inventario')}>Inventario</button><button className={activeView === 'caja' ? 'active' : ''} onClick={() => setActiveView('caja')}>Corte de caja</button>{user.role === 'admin' && <button className={activeView === 'reportes' ? 'active' : ''} onClick={() => setActiveView('reportes')}>Reportes</button>}</nav>}<div className="account"><div><strong>{user.name}</strong><span>{user.role}</span></div><button className="text-button" onClick={handleLogout}>Salir</button></div></div></header>
     {activeView === 'agenda' || !isStaff ? <section className="content">
       <div className="page-heading"><div><p className="eyebrow">{isStaff ? 'Control de operaciones' : 'Vista personal'}</p><h1>{isStaff ? 'Agenda' : 'Mi Agenda'}</h1><p className="subheading">{isStaff ? 'Programa las citas de tus clientes con tus barberos' : 'Tus próximas citas asignadas, siempre a la vista.'}</p></div>{isStaff && <button className="primary-button" onClick={() => setShowForm((current) => !current)}>{showForm ? 'Cerrar formulario' : '+ Nueva cita'}</button>}</div>
       {error && <div className="feedback error-message">{error}</div>}
@@ -276,7 +311,7 @@ function App() {
         <button className="primary-button" type="submit" disabled={!hasSelectedSlot}>Guardar cita</button>
       </form>}
       <div className="agenda-toolbar"><div><h2>{formatDate(form.fecha)}</h2><p>{visibleCitas.length} {visibleCitas.length === 1 ? 'cita activa' : 'citas activas'}</p></div><input aria-label="Filtrar fecha" type="date" value={form.fecha} onChange={(event) => updateForm('fecha', event.target.value)} /></div>
-      {loading ? <div className="empty-state"><span className="loader" />Cargando agenda...</div> : isStaff ? <div className="calendar-scroll"><div className="calendar-grid" style={{ '--barber-count': Math.max(barberos.length, 1) }}><div className="calendar-corner">Hora</div>{barberos.map((barbero) => <div className="calendar-barber" key={barbero._id}><span>Barbero</span><strong>{barbero.name}</strong></div>)}{daySlots.length === 0 ? <div className="calendar-closed">Domingo cerrado</div> : daySlots.map(([start, end]) => <div className="calendar-row" key={start}><div className="calendar-time"><strong>{start}</strong><span>{end}</span></div>{barberos.map((barbero) => { const cita = appointmentFor(barbero._id, start); return <div className="calendar-cell" key={`${barbero._id}-${start}`}>{cita && <article className="calendar-appointment"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio}</p><small>{cita.clienteTelefono}</small><button className="cancel-button" onClick={() => handleCancel(cita._id)}>Cancelar</button></article>}</div> })}</div>)}</div></div> : visibleCitas.length === 0 ? <div className="empty-state"><strong>La agenda está despejada.</strong><span>No tienes citas asignadas para esta fecha.</span></div> : <div className="appointment-list">{visibleCitas.map((cita) => <article className="appointment-row" key={cita._id}><div className="time-block"><strong>{cita.horaInicio}</strong><span>{cita.horaFin}</span></div><div className="appointment-info"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio} <span>·</span> {cita.clienteTelefono}</p>{cita.notas && <small>{cita.notas}</small>}</div><div className="barber-info"><span>Barbero</span><strong>{cita.barbero?.name || 'Sin asignar'}</strong></div></article>)}</div>}
+      {loading ? <div className="empty-state"><span className="loader" />Cargando agenda...</div> : isStaff ? <div className="calendar-scroll"><div className="calendar-grid" style={{ '--barber-count': Math.max(barberos.length, 1) }}><div className="calendar-corner">Hora</div>{barberos.map((barbero) => <div className="calendar-barber" key={barbero._id}><span>Barbero</span><strong>{barbero.name}</strong></div>)}{daySlots.length === 0 ? <div className="calendar-closed">Domingo cerrado</div> : daySlots.map(([start, end]) => <div className="calendar-row" key={start}><div className="calendar-time"><strong>{start}</strong><span>{end}</span></div>{barberos.map((barbero) => { const cita = appointmentFor(barbero._id, start); return <div className="calendar-cell" key={`${barbero._id}-${start}`}>{cita && <article className="calendar-appointment"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio}</p><small>{cita.clienteTelefono}</small>{cita.estado === 'agendada' && <button className="complete-button" onClick={() => { setCompletingCita(cita); setPaymentForm({ precioBase: '', metodoPago: 'efectivo' }) }}>Completar y cobrar</button>}<button className="cancel-button" onClick={() => handleCancel(cita._id)}>Cancelar</button></article>}</div> })}</div>)}</div></div> : visibleCitas.length === 0 ? <div className="empty-state"><strong>La agenda está despejada.</strong><span>No tienes citas asignadas para esta fecha.</span></div> : <div className="appointment-list">{visibleCitas.map((cita) => <article className="appointment-row" key={cita._id}><div className="time-block"><strong>{cita.horaInicio}</strong><span>{cita.horaFin}</span></div><div className="appointment-info"><div className="appointment-title"><h3>{cita.clienteNombre}</h3><span className="status">{cita.estado}</span></div><p>{cita.servicio} <span>·</span> {cita.clienteTelefono}</p>{cita.notas && <small>{cita.notas}</small>}</div><div className="barber-info"><span>Barbero</span><strong>{cita.barbero?.name || 'Sin asignar'}</strong></div></article>)}</div>}
     </section> : <section className="content inventory-content">
       <div className="page-heading"><div><p className="eyebrow">Control de existencias</p><h1>Inventario</h1><p className="subheading">Separa los insumos de trabajo de los productos disponibles para venta.</p></div></div>
       {error && <div className="feedback error-message">{error}</div>}
@@ -284,6 +319,9 @@ function App() {
       <div className="inventory-tabs"><button className={inventoryType === 'insumo' ? 'active' : ''} onClick={() => setInventoryType('insumo')}>Insumos</button><button className={inventoryType === 'venta' ? 'active' : ''} onClick={() => setInventoryType('venta')}>Productos de venta</button></div>
       <div className="inventory-layout"><div className="inventory-list">{inventoryLoading ? <div className="empty-state"><span className="loader" />Cargando inventario...</div> : inventoryProducts.length === 0 ? <div className="empty-state"><strong>No hay productos en esta vista.</strong><span>Agrega productos desde el API para comenzar.</span></div> : inventoryProducts.map((producto) => <article className={`inventory-card ${producto.necesitaReabastecimiento ? 'low-stock' : ''}`} key={producto._id}><div><span className="inventory-type">{producto.tipo === 'insumo' ? 'Insumo' : 'Venta'}</span><h2>{producto.nombre}</h2><p>{producto.stockActual} {producto.unidad} disponibles · mínimo {producto.stockMinimo}</p></div><strong className="stock-number">{producto.stockActual}</strong>{producto.necesitaReabastecimiento && <span className="restock-warning">Necesita reabastecimiento</span>}</article>)}</div><form className="movement-form" onSubmit={handleMovement}><p className="eyebrow">Trazabilidad</p><h2>Registrar movimiento</h2><label>Producto<select value={movementForm.productoId} onChange={(event) => setMovementForm({ ...movementForm, productoId: event.target.value })} required><option value="">Selecciona un producto</option>{inventoryProducts.map((producto) => <option key={producto._id} value={producto._id}>{producto.nombre}</option>)}</select></label><label>Tipo de movimiento<select value={movementForm.tipoMovimiento} onChange={(event) => setMovementForm({ ...movementForm, tipoMovimiento: event.target.value, gratis: false })}><option value="entrada">Entrada</option><option value="salida_uso">Salida por uso</option>{inventoryType === 'venta' && <option value="venta">Venta</option>}</select></label><label>Cantidad<input type="number" min="1" value={movementForm.cantidad} onChange={(event) => setMovementForm({ ...movementForm, cantidad: event.target.value })} required /></label>{movementForm.tipoMovimiento === 'venta' && <><label>Teléfono del cliente (opcional)<input value={movementForm.clienteTelefono} onChange={(event) => setMovementForm({ ...movementForm, clienteTelefono: event.target.value })} /></label><label>Nombre del cliente<input value={movementForm.clienteNombre} onChange={(event) => setMovementForm({ ...movementForm, clienteNombre: event.target.value })} /></label><label className="check-label"><input type="checkbox" checked={movementForm.gratis} onChange={(event) => setMovementForm({ ...movementForm, gratis: event.target.checked })} /> Producto gratis por lealtad</label></>}<button className="primary-button" type="submit" disabled={!movementForm.productoId}>Guardar movimiento</button></form></div>
     </section>}
+    {activeView === 'reportes' && user.role === 'admin' && <section className="content report-content"><div className="page-heading"><div><p className="eyebrow">Visión del negocio</p><h1>Reportes</h1><p className="subheading">Ingresos y ocupación de la barbería.</p></div></div>{error && <div className="feedback error-message">{error}</div>}{reportData ? <div className="report-grid"><article className="metric-card"><span>Ingresos totales</span><strong>${reportData.income.ingresosTotales.toFixed(2)}</strong></article><article className="metric-card"><span>Ingresos por citas</span><strong>${reportData.income.ingresosCitas.toFixed(2)}</strong></article><article className="metric-card"><span>Ventas de productos</span><strong>${reportData.income.ingresosProductos.toFixed(2)}</strong></article><section className="report-table"><h2>Ingresos por barbero</h2>{Object.entries(reportData.income.porBarbero).map(([name, amount]) => <p key={name}><span>{name}</span><strong>${amount.toFixed(2)}</strong></p>)}</section><section className="report-table"><h2>Ocupación</h2>{Object.entries(reportData.occupancy.porBarbero).map(([name, values]) => <p key={name}><span>{name}</span><strong>{values.completadas} completadas · {values.agendadas} pendientes · {values.canceladas} canceladas</strong></p>)}</section></div> : <div className="empty-state"><span className="loader" />Cargando reportes...</div>}</section>}
+    {activeView === 'caja' && <section className="content report-content"><div className="page-heading"><div><p className="eyebrow">Cierre del día</p><h1>Corte de caja</h1><p className="subheading">Citas cobradas registradas durante tu turno.</p></div></div>{cashData ? <div className="report-grid"><article className="metric-card"><span>Total efectivo</span><strong>${cashData.totalEfectivo.toFixed(2)}</strong></article><article className="metric-card"><span>Total transferencia</span><strong>${cashData.totalTransferencia.toFixed(2)}</strong></article>{cashData.turnos.map((turno, index) => <section className="report-table" key={turno.registradoPor?._id || index}><h2>{turno.registradoPor?.name || 'Turno'}</h2><p><span>Efectivo</span><strong>${turno.totalEfectivo.toFixed(2)}</strong></p><p><span>Transferencia</span><strong>${turno.totalTransferencia.toFixed(2)}</strong></p></section>)}</div> : <div className="empty-state"><span className="loader" />Cargando corte...</div>}</section>}
+    {completingCita && <div className="modal-backdrop"><form className="payment-modal" onSubmit={handleComplete}><p className="eyebrow">Cerrar cita</p><h2>Completar y cobrar</h2><p>{completingCita.clienteNombre} · {completingCita.servicio}</p><label>Precio base<input type="number" min="0" step="0.01" value={paymentForm.precioBase} onChange={(event) => setPaymentForm({ ...paymentForm, precioBase: event.target.value })} required /></label><label>Método de pago<select value={paymentForm.metodoPago} onChange={(event) => setPaymentForm({ ...paymentForm, metodoPago: event.target.value })}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setCompletingCita(null)}>Cancelar</button><button className="primary-button" type="submit">Registrar cobro</button></div></form></div>}
   </main>
 }
 

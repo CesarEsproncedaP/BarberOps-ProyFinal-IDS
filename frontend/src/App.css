@@ -78,6 +78,7 @@ textarea { resize: vertical; }
 .calendar-appointment p { margin-top: 7px; color: var(--orange-dark); font-size: 11px; font-weight: 700; }
 .calendar-appointment small { display: block; overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-appointment .cancel-button { margin-top: 8px; padding: 4px 6px; font-size: 10px; }
+.calendar-appointment .complete-button { display: block; margin-top: 8px; border: 0; background: var(--green); color: #fff; padding: 5px 7px; font-size: 10px; font-weight: 700; }
 .calendar-closed { grid-column: 1 / -1; min-height: 260px; display: grid; place-items: center; color: var(--muted); font: 700 20px 'Manrope', sans-serif; }
 .appointment-row { display: grid; grid-template-columns: 90px minmax(0, 1fr) 180px auto; gap: 20px; align-items: center; padding: 24px 0; border-bottom: 1px solid var(--line); animation: rise .35s ease both; }
 .time-block { display: grid; gap: 5px; color: var(--orange-dark); }
@@ -122,6 +123,21 @@ textarea { resize: vertical; }
 .movement-form h2 { margin: 8px 0 8px; font-size: 22px; letter-spacing: -.04em; }
 .check-label { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
 .check-label input { width: auto; accent-color: var(--orange); }
+.report-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.metric-card, .report-table { padding: 22px; border: 1px solid var(--line); background: var(--paper); }
+.metric-card { display: grid; gap: 10px; }
+.metric-card span { color: var(--muted); font-size: 12px; }
+.metric-card strong { color: var(--green); font: 800 28px 'Manrope', sans-serif; }
+.report-table { grid-column: span 3; }
+.report-table h2 { margin-bottom: 14px; font-size: 18px; }
+.report-table p { display: flex; justify-content: space-between; gap: 20px; padding: 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.report-table p strong { color: var(--ink); text-align: right; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(29, 35, 48, .55); }
+.payment-modal { display: grid; gap: 16px; width: min(100%, 400px); padding: 28px; background: var(--paper); box-shadow: var(--shadow); }
+.payment-modal h2 { font-size: 24px; letter-spacing: -.04em; }
+.payment-modal > p:not(.eyebrow) { color: var(--muted); font-size: 13px; }
+.modal-actions { display: flex; justify-content: end; gap: 10px; }
+.modal-actions .secondary-button { padding: 10px 14px; }
 .empty-state { display: grid; place-items: center; gap: 9px; min-height: 260px; color: var(--muted); text-align: center; }
 .empty-state strong { color: var(--ink); font: 700 20px 'Manrope', sans-serif; }
 .loader { width: 22px; height: 22px; border: 2px solid var(--line); border-top-color: var(--orange); border-radius: 50%; animation: spin .7s linear infinite; }
@@ -154,4 +170,6 @@ textarea { resize: vertical; }
   .account div { display: none; }
   .inventory-layout { grid-template-columns: 1fr; }
   .inventory-card { min-height: 124px; }
+  .report-grid { grid-template-columns: 1fr; }
+  .report-table { grid-column: auto; }
 }

@@ -1,5 +1,14 @@
 import Cliente from '../models/Cliente.js'
 
+export const loyaltyBenefitFor = (contadorCortes, totalCortes = null) => {
+  const currentMilestone = totalCortes > 0 && totalCortes % 12 === 0 ? 12 : contadorCortes
+  if (currentMilestone === 12) return { label: 'Corte normal gratis (12vo corte)', priceMultiplier: 0 }
+  if (currentMilestone === 9) return { label: '35% descuento (9no corte)', priceMultiplier: 0.65 }
+  if (currentMilestone === 6) return { label: 'Producto gratis (6to corte)', priceMultiplier: 1 }
+  if (currentMilestone === 3) return { label: '20% descuento (3er corte)', priceMultiplier: 0.8 }
+  return null
+}
+
 export const findOrCreateCliente = async ({ nombre, telefono }) => {
   const cliente = await Cliente.findOneAndUpdate(
     { telefono },

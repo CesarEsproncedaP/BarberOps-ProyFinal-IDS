@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authenticate, requireRole } from '../middlewares/auth.js'
-import { cancelCita, createCita, getCita, listCitas, updateCita } from '../controllers/citaController.js'
+import { cancelCita, completeCita, createCita, getCita, listCitas, updateCita } from '../controllers/citaController.js'
 
 const router = Router()
 
@@ -10,5 +10,6 @@ router.get('/', listCitas)
 router.get('/:id', getCita)
 router.put('/:id', requireRole('admin', 'recepcionista'), updateCita)
 router.patch('/:id/cancelar', requireRole('admin', 'recepcionista'), cancelCita)
+router.patch('/:id/completar', requireRole('admin', 'recepcionista'), completeCita)
 
 export default router
