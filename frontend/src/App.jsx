@@ -14,14 +14,14 @@ const weekdaySlots = [
   ["16:30", "17:15"],
   ["17:15", "18:00"],
   ["18:00", "18:45"],
-  ["18:45", "19:30"],
+  ["19:15", "20:00"],
 ];
 const saturdaySlots = [
   ["11:00", "11:45"],
   ["11:45", "12:30"],
   ["12:30", "13:15"],
   ["13:15", "14:00"],
-  ["14:00", "14:45"],
+  ["14:15", "15:00"],
 ];
 
 const formatDate = (date) =>
@@ -94,6 +94,10 @@ function App() {
     clienteTelefono: "",
     clienteNombre: "",
   });
+  const [saleCart, setSaleCart] = useState([]);
+  const [saleDraft, setSaleDraft] = useState({ productoId: "", cantidad: 1 });
+  const [saleClientPhone, setSaleClientPhone] = useState("");
+  const [saleClientLookup, setSaleClientLookup] = useState(null);
   const [completingCita, setCompletingCita] = useState(null);
   const [reschedulingCita, setReschedulingCita] = useState(null);
   const [rescheduleForm, setRescheduleForm] = useState({
@@ -107,6 +111,7 @@ function App() {
     metodoPago: "efectivo",
   });
   const [reportData, setReportData] = useState(null);
+  const [reportTips, setReportTips] = useState(null);
   const [cashData, setCashData] = useState(null);
   const [tipData, setTipData] = useState(null);
   const [paymentBenefit, setPaymentBenefit] = useState(null);
@@ -178,11 +183,13 @@ function App() {
   const loadReports = useCallback(async () => {
     try {
       if (user?.role === "admin") {
-        const [income, occupancy] = await Promise.all([
+        const [income, occupancy, tips] = await Promise.all([
           api("/reportes/ingresos"),
           api("/reportes/ocupacion"),
+          api("/reportes/propinas"),
         ]);
         setReportData({ income, occupancy });
+        setReportTips(tips);
       }
       if (user?.role === "barbero") {
         setTipData(await api("/reportes/propinas"));
@@ -216,6 +223,21 @@ function App() {
     }, 0);
     return () => clearTimeout(timer);
   }, [activeView, loadInventory, token, user]);
+
+  useEffect(() => {
+    if (!token || !saleClientPhone.trim() || activeView !== "inventario" || inventoryType !== "venta") {
+      return undefined;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const response = await api(`/clientes/telefono/${encodeURIComponent(saleClientPhone.trim())}`);
+        setSaleClientLookup(response.cliente);
+      } catch (requestError) {
+        setSaleClientLookup(requestError.message === "Cliente no encontrado" ? { nuevo: true } : { error: requestError.message });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [activeView, api, inventoryType, saleClientPhone, token]);
 
   useEffect(() => {
     if (
@@ -483,6 +505,34 @@ function App() {
         </aside>
       </main>
     );
+  }
+
+  const addSaleItem = () => {
+    const product = inventoryProducts.find((item) => item._id === saleDraft.productoId)
+    const quantity = Number(saleDraft.cantidad)
+    if (!product || !Number.isFinite(quantity) || quantity <= 0) return
+    setSaleCart((current) => {
+      const existing = current.find((item) => item.productoId === product._id)
+      if (existing) return current.map((item) => item.productoId === product._id ? { ...item, cantidad: item.cantidad + quantity } : item)
+      return [...current, { productoId: product._id, nombre: product.nombre, precio: product.precio, cantidad: quantity }]
+    })
+    setSaleDraft({ productoId: "", cantidad: 1 })
+  }
+
+  const confirmSale = async (event) => {
+    event.preventDefault()
+    if (!saleCart.length) return
+    setError("")
+    setNotice("")
+    try {
+      const response = await api("/inventario/venta", { method: "POST", body: JSON.stringify({ items: saleCart.map(({ productoId, cantidad }) => ({ productoId, cantidad })), clienteTelefono: saleClientPhone || undefined }) })
+      setNotice(`Venta registrada por $${response.total.toFixed(2)}`)
+      setSaleCart([])
+      setSaleClientPhone("")
+      await loadInventory()
+    } catch (requestError) {
+      setError(requestError.message)
+    }
   }
 
   const isStaff = user.role === "admin" || user.role === "recepcionista";
@@ -995,6 +1045,7 @@ function App() {
                         {producto.stockActual} {producto.unidad} disponibles ·
                         mínimo {producto.stockMinimo}
                       </p>
+                      {inventoryType === "venta" && <strong className="product-price">${producto.precio.toFixed(2)}</strong>}
                     </div>
                     <strong className="stock-number">
                       {producto.stockActual}
@@ -1039,14 +1090,14 @@ function App() {
                     setMovementForm({
                       ...movementForm,
                       tipoMovimiento: event.target.value,
-                      gratis: false,
+                      gratis: event.target.value === "venta",
                     })
                   }
                 >
                   <option value="entrada">Entrada</option>
                   <option value="salida_uso">Salida por uso</option>
                   {inventoryType === "venta" && (
-                    <option value="venta">Venta</option>
+                    <option value="venta">Producto gratis por lealtad</option>
                   )}
                 </select>
               </label>
@@ -1095,12 +1146,8 @@ function App() {
                     <input
                       type="checkbox"
                       checked={movementForm.gratis}
-                      onChange={(event) =>
-                        setMovementForm({
-                          ...movementForm,
-                          gratis: event.target.checked,
-                        })
-                      }
+                      readOnly
+                      disabled
                     />{" "}
                     Producto gratis por lealtad
                   </label>
@@ -1114,6 +1161,22 @@ function App() {
                 Guardar movimiento
               </button>
             </form>
+            {inventoryType === "venta" && (
+              <form className="movement-form sale-form" onSubmit={confirmSale}>
+                <p className="eyebrow">Nueva venta</p>
+                <h2>Carrito de productos</h2>
+                <label>Producto<select value={saleDraft.productoId} onChange={(event) => setSaleDraft({ ...saleDraft, productoId: event.target.value })}><option value="">Selecciona un producto</option>{inventoryProducts.map((producto) => <option key={producto._id} value={producto._id}>{producto.nombre} · ${producto.precio.toFixed(2)}</option>)}</select></label>
+                <label>Cantidad<input type="number" min="1" value={saleDraft.cantidad} onChange={(event) => setSaleDraft({ ...saleDraft, cantidad: event.target.value })} /></label>
+                <button className="secondary-button" type="button" onClick={addSaleItem}>Agregar al carrito</button>
+                <div className="sale-cart">{saleCart.map((item) => <div className="sale-cart-row" key={item.productoId}><span>{item.nombre} × {item.cantidad}</span><strong>${(item.precio * item.cantidad).toFixed(2)}</strong><button type="button" className="text-button" onClick={() => setSaleCart((current) => current.filter((entry) => entry.productoId !== item.productoId))}>Quitar</button></div>)}</div>
+                <label>Teléfono del cliente (opcional)<input value={saleClientPhone} onChange={(event) => { setSaleClientPhone(event.target.value); setSaleClientLookup(null) }} /></label>
+                {saleClientLookup?.error && <p className="error-message">{saleClientLookup.error}</p>}
+                {saleClientLookup?.nuevo && <div className="client-summary client-new"><strong>Cliente nuevo</strong><span>La venta se registrará sin nombre asociado.</span></div>}
+                {saleClientLookup && !saleClientLookup.nuevo && !saleClientLookup.error && <div className="client-summary"><div><strong>Cliente: {saleClientLookup.nombre}</strong><span>{saleClientLookup.historialVisitas.length} visitas · {saleClientLookup.contadorCortes} cortes acumulados</span></div><div><strong>{saleClientLookup.adeudo > 0 ? `Adeudo pendiente: $${saleClientLookup.adeudo.toFixed(2)}` : "Sin adeudo pendiente"}</strong><span>{saleClientLookup.beneficioLealtad ? `Beneficio disponible: ${saleClientLookup.beneficioLealtad}` : "Sin beneficio de lealtad por ahora"}</span></div></div>}
+                <strong className="sale-total">Total: ${saleCart.reduce((sum, item) => sum + item.precio * item.cantidad, 0).toFixed(2)}</strong>
+                <button className="primary-button" type="submit" disabled={!saleCart.length}>Confirmar venta</button>
+              </form>
+            )}
           </div>
         </section>
       ) : null}
@@ -1143,6 +1206,7 @@ function App() {
                   ${reportData.income.ingresosProductos.toFixed(2)}
                 </strong>
               </article>
+              {reportTips && <section className="report-table tip-report-summary"><h2>Propinas de la semana - Todos los barberos</h2><p><span>Total</span><strong>${reportTips.total.toFixed(2)}</strong></p>{reportTips.porBarbero.map((barber) => <p key={barber.barbero?._id}><span>{barber.barbero?.name || "Sin barbero"}</span><strong>${barber.total.toFixed(2)}</strong></p>)}</section>}
               <section className="report-table">
                 <h2>Ingresos por barbero</h2>
                 {Object.entries(reportData.income.porBarbero).map(
@@ -1216,6 +1280,10 @@ function App() {
               <article className="metric-card">
                 <span>Total transferencia</span>
                 <strong>${cashData.totalTransferencia.toFixed(2)}</strong>
+              </article>
+              <article className="metric-card tip-pending">
+                <span>Propinas incluidas en caja</span>
+                <strong>${cashData.totalPropinas.toFixed(2)}</strong>
               </article>
               {cashData.turnos.map((turno, index) => (
                 <section
@@ -1301,20 +1369,12 @@ function App() {
                 </strong>
               </div>
             )}
-            <label>
-              Precio base
+              <label>
+                Precio del servicio
               <input
-                type="number"
-                min="0"
-                step="0.01"
+                  type="text"
                 value={paymentForm.precioBase}
-                onChange={(event) =>
-                  setPaymentForm({
-                    ...paymentForm,
-                    precioBase: event.target.value,
-                  })
-                }
-                required
+                  readOnly
               />
             </label>
             <label>

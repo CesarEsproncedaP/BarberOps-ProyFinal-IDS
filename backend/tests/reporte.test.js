@@ -82,6 +82,7 @@ describe('cobro y reportes integration', () => {
     const reception = await request(app).get('/api/reportes/propinas').set('Authorization', `Bearer ${recepcionistaToken}`)
     expect(admin.status).toBe(200)
     expect(admin.body.total).toBe(25)
+    expect(admin.body.porBarbero[0].total).toBe(25)
     expect(reception.status).toBe(403)
   })
 
@@ -258,5 +259,16 @@ describe('cobro y reportes integration', () => {
     expect(movement.status).toBe(201)
     expect(response.status).toBe(200)
     expect(response.body.totalEfectivo).toBe(160)
+  })
+
+  it('includes tips in cash totals and exposes their breakdown', async () => {
+    const created = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0940' })
+    await complete(recepcionistaToken, created.body.cita._id, { precioBase: 100, metodoPago: 'efectivo', propina: 35 })
+    const response = await request(app)
+      .get('/api/reportes/corte-caja?fecha=2026-09-21')
+      .set('Authorization', `Bearer ${recepcionistaToken}`)
+
+    expect(response.status).toBe(200)
+    expect(response.body).toMatchObject({ totalEfectivo: 135, propinasEfectivo: 35, propinasTransferencia: 0, totalPropinas: 35 })
   })
 })

@@ -79,6 +79,41 @@ export const createMovimiento = async (req, res) => {
   return res.status(201).json({ producto: publicProducto(producto), movimiento })
 }
 
+export const createVentaMultiple = async (req, res) => {
+  const { items, clienteTelefono, clienteNombre } = req.body
+  if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ message: 'La venta debe incluir al menos un producto' })
+
+  const normalizedItems = items.map((item) => ({
+    productoId: item?.productoId,
+    cantidad: Number(item?.cantidad),
+  }))
+  const invalidItem = normalizedItems.find((item) => !mongoose.isValidObjectId(item.productoId) || invalidNumber(item.cantidad))
+  if (invalidItem) return res.status(400).json({ message: 'Cada producto debe tener un ID válido y una cantidad mayor que cero' })
+
+  const productIds = normalizedItems.map((item) => item.productoId)
+  const products = await Producto.find({ _id: { $in: productIds } })
+  const productMap = new Map(products.map((product) => [product._id.toString(), product]))
+  for (const item of normalizedItems) {
+    const product = productMap.get(item.productoId.toString())
+    if (!product) return res.status(400).json({ message: `Producto no encontrado: ${item.productoId}` })
+    if (product.tipo !== 'venta') return res.status(400).json({ message: `El producto ${product.nombre} no está disponible para venta` })
+    if (product.stockActual < item.cantidad) return res.status(400).json({ message: `Stock insuficiente para ${product.nombre}` })
+  }
+
+  const normalizedClientPhone = typeof clienteTelefono === 'string' ? clienteTelefono.trim() : ''
+  const resultItems = []
+  for (const item of normalizedItems) {
+    const product = productMap.get(item.productoId.toString())
+    product.stockActual -= item.cantidad
+    await product.save()
+    const movimiento = await MovimientoInventario.create({ producto: product._id, tipoMovimiento: 'venta', cantidad: item.cantidad, registradoPor: req.user._id, clienteTelefono: normalizedClientPhone || undefined })
+    if (normalizedClientPhone) await recordClientPurchase({ clienteNombre, clienteTelefono: normalizedClientPhone, producto: product.nombre, precio: product.precio * item.cantidad, fecha: movimiento.fecha })
+    resultItems.push({ producto: product, cantidad: item.cantidad, subtotal: product.precio * item.cantidad, movimiento })
+  }
+
+  return res.status(201).json({ total: resultItems.reduce((sum, item) => sum + item.subtotal, 0), items: resultItems })
+}
+
 export const listMovimientos = async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: 'Producto no encontrado' })
   if (!(await Producto.exists({ _id: req.params.id }))) return res.status(404).json({ message: 'Producto no encontrado' })

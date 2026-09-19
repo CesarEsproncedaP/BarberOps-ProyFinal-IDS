@@ -164,6 +164,58 @@ describe('inventario integration', () => {
     expect(client.historialCompras[0].precio).toBe(0)
   })
 
+  it('sells multiple products in one transaction', async () => {
+    const first = await createProduct({ nombre: 'Peine', tipo: 'venta', precio: 120, stockActual: 5 })
+    const second = await createProduct({ nombre: 'Shampoo', tipo: 'venta', precio: 160, stockActual: 4 })
+    const response = await request(app)
+      .post('/api/inventario/venta')
+      .set('Authorization', `Bearer ${recepcionistaToken}`)
+      .send({ items: [{ productoId: first.body.producto._id, cantidad: 2 }, { productoId: second.body.producto._id, cantidad: 1 }] })
+
+    const products = await Producto.find({ _id: { $in: [first.body.producto._id, second.body.producto._id] } }).sort({ nombre: 1 })
+    expect(response.status).toBe(201)
+    expect(response.body.total).toBe(400)
+    expect(products.find((product) => product.nombre === 'Peine').stockActual).toBe(3)
+    expect(products.find((product) => product.nombre === 'Shampoo').stockActual).toBe(3)
+  })
+
+  it('rejects the whole multi-sale when one item lacks stock', async () => {
+    const available = await createProduct({ nombre: 'Disponible', tipo: 'venta', precio: 100, stockActual: 5 })
+    const limited = await createProduct({ nombre: 'Limitado', tipo: 'venta', precio: 80, stockActual: 1 })
+    const response = await request(app)
+      .post('/api/inventario/venta')
+      .set('Authorization', `Bearer ${recepcionistaToken}`)
+      .send({ items: [{ productoId: available.body.producto._id, cantidad: 2 }, { productoId: limited.body.producto._id, cantidad: 2 }] })
+
+    const products = await Producto.find({ _id: { $in: [available.body.producto._id, limited.body.producto._id] } })
+    expect(response.status).toBe(400)
+    expect(products.find((product) => product.nombre === 'Disponible').stockActual).toBe(5)
+    expect(products.find((product) => product.nombre === 'Limitado').stockActual).toBe(1)
+  })
+
+  it('adds every multi-sale item to the client purchase history', async () => {
+    const first = await createProduct({ nombre: 'Producto A', tipo: 'venta', precio: 30, stockActual: 5 })
+    const second = await createProduct({ nombre: 'Producto B', tipo: 'venta', precio: 40, stockActual: 5 })
+    const response = await request(app)
+      .post('/api/inventario/venta')
+      .set('Authorization', `Bearer ${recepcionistaToken}`)
+      .send({ items: [{ productoId: first.body.producto._id, cantidad: 1 }, { productoId: second.body.producto._id, cantidad: 2 }], clienteTelefono: '555-7777', clienteNombre: 'Cliente Carrito' })
+    const client = await Cliente.findOne({ telefono: '555-7777' })
+
+    expect(response.status).toBe(201)
+    expect(client.historialCompras).toHaveLength(2)
+    expect(client.historialCompras.map((purchase) => purchase.producto).sort()).toEqual(['Producto A', 'Producto B'])
+  })
+
+  it('allows a multi-sale without a client and rejects a barbero', async () => {
+    const product = await createProduct({ nombre: 'Venta directa', tipo: 'venta', precio: 30, stockActual: 2 })
+    const withoutClient = await request(app).post('/api/inventario/venta').set('Authorization', `Bearer ${recepcionistaToken}`).send({ items: [{ productoId: product.body.producto._id, cantidad: 1 }] })
+    const blocked = await request(app).post('/api/inventario/venta').set('Authorization', `Bearer ${barberoToken}`).send({ items: [{ productoId: product.body.producto._id, cantidad: 1 }] })
+
+    expect(withoutClient.status).toBe(201)
+    expect(blocked.status).toBe(403)
+  })
+
   it('returns movement history for a product', async () => {
     const created = await createProduct({ stockActual: 1 })
     await request(app).post(`/api/inventario/${created.body.producto._id}/movimiento`).set('Authorization', `Bearer ${adminToken}`).send({ tipoMovimiento: 'entrada', cantidad: 4 })

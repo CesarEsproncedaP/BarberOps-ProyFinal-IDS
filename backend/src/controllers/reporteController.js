@@ -91,19 +91,26 @@ export const corteCaja = async (req, res) => {
   const turnos = {}
   for (const cita of citas) {
     const key = cita.creadoPor?._id.toString() || 'sin-registrador'
-    if (!turnos[key]) turnos[key] = { registradoPor: cita.creadoPor, totalEfectivo: 0, totalTransferencia: 0, citas: [], movimientos: [] }
+    if (!turnos[key]) turnos[key] = { registradoPor: cita.creadoPor, totalEfectivo: 0, totalTransferencia: 0, propinasEfectivo: 0, propinasTransferencia: 0, totalPropinas: 0, citas: [], movimientos: [] }
     const amount = cita.precioFinal || 0
-    if (cita.metodoPago === 'transferencia') turnos[key].totalTransferencia += amount
-    else turnos[key].totalEfectivo += amount
+    const tip = cita.propina || 0
+    if (cita.metodoPago === 'transferencia') {
+      turnos[key].totalTransferencia += amount + tip
+      turnos[key].propinasTransferencia += tip
+    } else {
+      turnos[key].totalEfectivo += amount + tip
+      turnos[key].propinasEfectivo += tip
+    }
+    turnos[key].totalPropinas += tip
     turnos[key].citas.push(cita)
   }
   for (const movimiento of movimientos) {
     const key = movimiento.registradoPor?._id.toString() || 'sin-registrador'
-    if (!turnos[key]) turnos[key] = { registradoPor: movimiento.registradoPor, totalEfectivo: 0, totalTransferencia: 0, citas: [], movimientos: [] }
+    if (!turnos[key]) turnos[key] = { registradoPor: movimiento.registradoPor, totalEfectivo: 0, totalTransferencia: 0, propinasEfectivo: 0, propinasTransferencia: 0, totalPropinas: 0, citas: [], movimientos: [] }
     turnos[key].totalEfectivo += (movimiento.producto?.precio || 0) * movimiento.cantidad
     turnos[key].movimientos.push(movimiento)
   }
-  return res.json({ fecha: req.query.fecha, cerrado: Boolean(existingClosure && citas.length === 0), totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0), totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0), turnos: Object.values(turnos) })
+  return res.json({ fecha: req.query.fecha, cerrado: Boolean(existingClosure && citas.length === 0), totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0), totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0), propinasEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.propinasEfectivo, 0), propinasTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.propinasTransferencia, 0), totalPropinas: Object.values(turnos).reduce((sum, turno) => sum + turno.totalPropinas, 0), turnos: Object.values(turnos) })
 }
 
 export const cerrarCaja = async (req, res) => {
@@ -116,12 +123,14 @@ export const cerrarCaja = async (req, res) => {
   const movementQuery = { fecha: { $gte: date, $lt: nextDate }, tipoMovimiento: 'venta', gratis: false }
   if (req.user.role === 'recepcionista') movementQuery.registradoPor = req.user._id
   const movimientos = await MovimientoInventario.find(movementQuery).populate('producto', 'precio')
-  const totalEfectivo = citas.filter((cita) => cita.metodoPago !== 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0), 0)
+  const propinasEfectivo = citas.filter((cita) => cita.metodoPago !== 'transferencia').reduce((sum, cita) => sum + (cita.propina || 0), 0)
+  const propinasTransferencia = citas.filter((cita) => cita.metodoPago === 'transferencia').reduce((sum, cita) => sum + (cita.propina || 0), 0)
+  const totalEfectivo = citas.filter((cita) => cita.metodoPago !== 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0) + (cita.propina || 0), 0)
     + movimientos.reduce((sum, movimiento) => sum + (movimiento.producto?.precio || 0) * movimiento.cantidad, 0)
-  const totalTransferencia = citas.filter((cita) => cita.metodoPago === 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0), 0)
+  const totalTransferencia = citas.filter((cita) => cita.metodoPago === 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0) + (cita.propina || 0), 0)
   const corte = await CorteCaja.findOneAndUpdate(
     { fecha: date, registradoPor: req.user._id },
-    { fecha: date, registradoPor: req.user._id, totalEfectivo, totalTransferencia, citas: citas.map((cita) => cita._id), movimientos: movimientos.map((movimiento) => movimiento._id), cerradoEn: new Date() },
+    { fecha: date, registradoPor: req.user._id, totalEfectivo, totalTransferencia, propinasEfectivo, propinasTransferencia, totalPropinas: propinasEfectivo + propinasTransferencia, citas: citas.map((cita) => cita._id), movimientos: movimientos.map((movimiento) => movimiento._id), cerradoEn: new Date() },
     { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
   )
   return res.status(201).json({ corte, cerrado: true })
@@ -143,5 +152,6 @@ export const propinas = async (req, res) => {
     if (!byBarber[key]) byBarber[key] = { barbero: cita.barbero, total: 0 }
     byBarber[key].total += cita.propina || 0
   }
-  return res.json({ fechaInicio: start.toISOString().slice(0, 10), fechaFin: new Date(end.getTime() - 86400000).toISOString().slice(0, 10), total: Object.values(byBarber).reduce((sum, item) => sum + item.total, 0), porBarbero: Object.values(byBarber) })
+  const porBarbero = Object.values(byBarber)
+  return res.json({ fechaInicio: start.toISOString().slice(0, 10), fechaFin: new Date(end.getTime() - 86400000).toISOString().slice(0, 10), total: porBarbero.reduce((sum, item) => sum + item.total, 0), porBarbero })
 }
