@@ -243,4 +243,20 @@ describe('cobro y reportes integration', () => {
 
     expect(current.body.totalEfectivo).toBe(75)
   })
+
+  it('includes paid product sales in the cash cut', async () => {
+    const product = await Producto.create({ nombre: 'Producto caja', tipo: 'venta', stockActual: 5, stockMinimo: 1, precio: 80, unidad: 'pieza' })
+    const movement = await request(app)
+      .post(`/api/inventario/${product._id}/movimiento`)
+      .set('Authorization', `Bearer ${recepcionistaToken}`)
+      .send({ tipoMovimiento: 'venta', cantidad: 2 })
+    const today = new Date().toISOString().slice(0, 10)
+    const response = await request(app)
+      .get(`/api/reportes/corte-caja?fecha=${today}`)
+      .set('Authorization', `Bearer ${recepcionistaToken}`)
+
+    expect(movement.status).toBe(201)
+    expect(response.status).toBe(200)
+    expect(response.body.totalEfectivo).toBe(160)
+  })
 })

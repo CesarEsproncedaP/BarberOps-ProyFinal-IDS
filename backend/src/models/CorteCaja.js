@@ -7,6 +7,7 @@ const corteCajaSchema = new mongoose.Schema(
     totalEfectivo: { type: Number, required: true, default: 0 },
     totalTransferencia: { type: Number, required: true, default: 0 },
     citas: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Cita' }],
+    movimientos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'MovimientoInventario' }],
     cerradoEn: { type: Date, default: Date.now },
   },
   { timestamps: true },

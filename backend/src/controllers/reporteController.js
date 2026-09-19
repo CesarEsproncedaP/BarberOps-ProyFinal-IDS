@@ -84,14 +84,24 @@ export const corteCaja = async (req, res) => {
   }
 
   const citas = await Cita.find(query).populate('creadoPor', 'name email role').populate('barbero', 'name email role')
+  const movementQuery = { fecha: { $gte: date, $lt: nextDate }, tipoMovimiento: 'venta', gratis: false }
+  if (existingClosure) movementQuery.createdAt = { $gt: existingClosure.cerradoEn }
+  if (req.user.role === 'recepcionista') movementQuery.registradoPor = req.user._id
+  const movimientos = await MovimientoInventario.find(movementQuery).populate('producto', 'nombre precio').populate('registradoPor', 'name email role')
   const turnos = {}
   for (const cita of citas) {
     const key = cita.creadoPor?._id.toString() || 'sin-registrador'
-    if (!turnos[key]) turnos[key] = { registradoPor: cita.creadoPor, totalEfectivo: 0, totalTransferencia: 0, citas: [] }
+    if (!turnos[key]) turnos[key] = { registradoPor: cita.creadoPor, totalEfectivo: 0, totalTransferencia: 0, citas: [], movimientos: [] }
     const amount = cita.precioFinal || 0
     if (cita.metodoPago === 'transferencia') turnos[key].totalTransferencia += amount
     else turnos[key].totalEfectivo += amount
     turnos[key].citas.push(cita)
+  }
+  for (const movimiento of movimientos) {
+    const key = movimiento.registradoPor?._id.toString() || 'sin-registrador'
+    if (!turnos[key]) turnos[key] = { registradoPor: movimiento.registradoPor, totalEfectivo: 0, totalTransferencia: 0, citas: [], movimientos: [] }
+    turnos[key].totalEfectivo += (movimiento.producto?.precio || 0) * movimiento.cantidad
+    turnos[key].movimientos.push(movimiento)
   }
   return res.json({ fecha: req.query.fecha, cerrado: Boolean(existingClosure && citas.length === 0), totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0), totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0), turnos: Object.values(turnos) })
 }
@@ -103,11 +113,15 @@ export const cerrarCaja = async (req, res) => {
   const closeQuery = { fecha: { $gte: date, $lt: nextDate }, estado: 'completada' }
   if (req.user.role === 'recepcionista') closeQuery.creadoPor = req.user._id
   const citas = await Cita.find(closeQuery)
+  const movementQuery = { fecha: { $gte: date, $lt: nextDate }, tipoMovimiento: 'venta', gratis: false }
+  if (req.user.role === 'recepcionista') movementQuery.registradoPor = req.user._id
+  const movimientos = await MovimientoInventario.find(movementQuery).populate('producto', 'precio')
   const totalEfectivo = citas.filter((cita) => cita.metodoPago !== 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0), 0)
+    + movimientos.reduce((sum, movimiento) => sum + (movimiento.producto?.precio || 0) * movimiento.cantidad, 0)
   const totalTransferencia = citas.filter((cita) => cita.metodoPago === 'transferencia').reduce((sum, cita) => sum + (cita.precioFinal || 0), 0)
   const corte = await CorteCaja.findOneAndUpdate(
     { fecha: date, registradoPor: req.user._id },
-    { fecha: date, registradoPor: req.user._id, totalEfectivo, totalTransferencia, citas: citas.map((cita) => cita._id), cerradoEn: new Date() },
+    { fecha: date, registradoPor: req.user._id, totalEfectivo, totalTransferencia, citas: citas.map((cita) => cita._id), movimientos: movimientos.map((movimiento) => movimiento._id), cerradoEn: new Date() },
     { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
   )
   return res.status(201).json({ corte, cerrado: true })
