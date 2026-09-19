@@ -26,6 +26,8 @@ const dataFor = (overrides = {}) => ({
 })
 const createAppointment = (token, overrides = {}) => request(app).post('/api/citas').set('Authorization', `Bearer ${token}`).send(dataFor(overrides))
 const complete = (token, id, body = { precioBase: 100, metodoPago: 'efectivo' }) => request(app).patch(`/api/citas/${id}/completar`).set('Authorization', `Bearer ${token}`).send(body)
+const cashDate = () => new Date().toISOString().slice(0, 10)
+const futureDate = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
 
 beforeAll(async () => {
   process.env.JWT_SECRET = 'test-secret'
@@ -84,6 +86,15 @@ describe('cobro y reportes integration', () => {
     expect(admin.body.total).toBe(25)
     expect(admin.body.porBarbero[0].total).toBe(25)
     expect(reception.status).toBe(403)
+  })
+
+  it('uses the requested date range for admin tips', async () => {
+    const created = await createAppointment(recepcionistaToken, { fecha: '2026-08-10', clienteTelefono: '555-0614' })
+    await complete(recepcionistaToken, created.body.cita._id, { precioBase: 100, metodoPago: 'efectivo', propina: 55 })
+    await Cita.updateOne({ _id: created.body.cita._id }, { $set: { fecha: new Date('2026-08-10T00:00:00.000Z') } })
+    const response = await request(app).get('/api/reportes/propinas?fechaInicio=2026-08-10&fechaFin=2026-08-10').set('Authorization', `Bearer ${adminToken}`)
+    expect(response.status).toBe(200)
+    expect(response.body.total).toBe(55)
   })
 
   it('rebuilds a missing client ficha for a legacy appointment when charging', async () => {
@@ -183,35 +194,38 @@ describe('cobro y reportes integration', () => {
   })
 
   it('filters receptionist cash cut to their own completed appointments', async () => {
-    const first = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0901' })
+    const first = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0901', fecha: cashDate() })
     for (let index = 0; index < 4; index += 1) {
       await createAppointment(secondRecepcionistaToken, { clienteTelefono: '555-0902', fecha: `2026-09-${String(21 + index).padStart(2, '0')}` })
     }
     const existingClient = await Cliente.findOne({ telefono: '555-0902' })
     existingClient.historialVisitas.push({ citaId: new mongoose.Types.ObjectId(), fecha: new Date('2026-09-20T00:00:00.000Z'), barbero: barberoOne._id, servicio: 'Corte', incluyoCorte: true })
     await existingClient.save()
-    const second = await createAppointment(secondRecepcionistaToken, { clienteTelefono: '555-0902', fecha: '2026-09-21', horaInicio: '12:00', horaFin: '12:45' })
+    const second = await createAppointment(secondRecepcionistaToken, { clienteTelefono: '555-0902', fecha: cashDate(), horaInicio: '12:00', horaFin: '12:45' })
     await complete(recepcionistaToken, first.body.cita._id, { precioBase: 100, metodoPago: 'efectivo' })
     await complete(secondRecepcionistaToken, second.body.cita._id, { precioBase: 200, metodoPago: 'transferencia' })
-    const own = await request(app).get('/api/reportes/corte-caja?fecha=2026-09-21').set('Authorization', `Bearer ${recepcionistaToken}`)
-    const admin = await request(app).get('/api/reportes/corte-caja?fecha=2026-09-21').set('Authorization', `Bearer ${adminToken}`)
+    const own = await request(app).get(`/api/reportes/corte-caja?fecha=${cashDate()}`).set('Authorization', `Bearer ${recepcionistaToken}`)
+    const admin = await request(app).get(`/api/reportes/corte-caja?fecha=${cashDate()}`).set('Authorization', `Bearer ${adminToken}`)
     expect(own.body).toMatchObject({ totalEfectivo: 100, totalTransferencia: 0 })
     expect(admin.body).toMatchObject({ totalEfectivo: 100, totalTransferencia: 200 })
-    expect(admin.body.turnos).toHaveLength(2)
+    expect(admin.body.turnos).toEqual(expect.arrayContaining([
+      expect.objectContaining({ totalEfectivo: 100 }),
+      expect.objectContaining({ totalTransferencia: 200 }),
+    ]))
   })
 
   it('closes a receptionist turn and keeps the historical total for admin', async () => {
-    const created = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0910' })
+    const created = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0910', fecha: cashDate() })
     await complete(recepcionistaToken, created.body.cita._id, { precioBase: 150, metodoPago: 'efectivo' })
     const closed = await request(app)
       .post('/api/reportes/corte-caja/cerrar')
       .set('Authorization', `Bearer ${recepcionistaToken}`)
-      .send({ fecha: '2026-09-21' })
+      .send({ fecha: cashDate() })
     const ownAfterClose = await request(app)
-      .get('/api/reportes/corte-caja?fecha=2026-09-21')
+      .get(`/api/reportes/corte-caja?fecha=${cashDate()}`)
       .set('Authorization', `Bearer ${recepcionistaToken}`)
     const adminAfterClose = await request(app)
-      .get('/api/reportes/corte-caja?fecha=2026-09-21')
+      .get(`/api/reportes/corte-caja?fecha=${cashDate()}`)
       .set('Authorization', `Bearer ${adminToken}`)
 
     expect(closed.status).toBe(201)
@@ -220,14 +234,14 @@ describe('cobro y reportes integration', () => {
   })
 
   it('allows admin to close their own turn and then shows zero in the cash cut', async () => {
-    const created = await createAppointment(adminToken, { clienteTelefono: '555-0920' })
+    const created = await createAppointment(adminToken, { clienteTelefono: '555-0920', fecha: cashDate() })
     await complete(adminToken, created.body.cita._id, { precioBase: 200, metodoPago: 'efectivo' })
     const closed = await request(app)
       .post('/api/reportes/corte-caja/cerrar')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ fecha: '2026-09-21' })
+      .send({ fecha: cashDate() })
     const afterClose = await request(app)
-      .get('/api/reportes/corte-caja?fecha=2026-09-21')
+      .get(`/api/reportes/corte-caja?fecha=${cashDate()}`)
       .set('Authorization', `Bearer ${adminToken}`)
 
     expect(closed.status).toBe(201)
@@ -235,12 +249,12 @@ describe('cobro y reportes integration', () => {
   })
 
   it('counts new payments made after a previous turn closure', async () => {
-    const first = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0930' })
+    const first = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0930', fecha: cashDate() })
     await complete(recepcionistaToken, first.body.cita._id, { precioBase: 100, metodoPago: 'efectivo' })
-    await request(app).post('/api/reportes/corte-caja/cerrar').set('Authorization', `Bearer ${recepcionistaToken}`).send({ fecha: '2026-09-21' })
-    const second = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0931', fecha: '2026-09-21', horaInicio: '12:00', horaFin: '12:45' })
+    await request(app).post('/api/reportes/corte-caja/cerrar').set('Authorization', `Bearer ${recepcionistaToken}`).send({ fecha: cashDate() })
+    const second = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0931', fecha: cashDate(), horaInicio: '12:00', horaFin: '12:45' })
     await complete(recepcionistaToken, second.body.cita._id, { precioBase: 75, metodoPago: 'efectivo' })
-    const current = await request(app).get('/api/reportes/corte-caja?fecha=2026-09-21').set('Authorization', `Bearer ${recepcionistaToken}`)
+    const current = await request(app).get(`/api/reportes/corte-caja?fecha=${cashDate()}`).set('Authorization', `Bearer ${recepcionistaToken}`)
 
     expect(current.body.totalEfectivo).toBe(75)
   })
@@ -261,11 +275,23 @@ describe('cobro y reportes integration', () => {
     expect(response.body.totalEfectivo).toBe(160)
   })
 
+  it('counts a future appointment in the cash cut on the date it is paid', async () => {
+    const created = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0950', fecha: futureDate(2) })
+    const paid = await complete(recepcionistaToken, created.body.cita._id, { precioBase: 250, metodoPago: 'efectivo' })
+    const response = await request(app)
+      .get(`/api/reportes/corte-caja?fecha=${cashDate()}`)
+      .set('Authorization', `Bearer ${recepcionistaToken}`)
+
+    expect(paid.body.cita.completadoEn).toBeTruthy()
+    expect(response.body.totalEfectivo).toBe(250)
+    expect(response.body.turnos[0].citas[0].fecha.slice(0, 10)).toBe(futureDate(2))
+  })
+
   it('includes tips in cash totals and exposes their breakdown', async () => {
-    const created = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0940' })
+    const created = await createAppointment(recepcionistaToken, { clienteTelefono: '555-0940', fecha: cashDate() })
     await complete(recepcionistaToken, created.body.cita._id, { precioBase: 100, metodoPago: 'efectivo', propina: 35 })
     const response = await request(app)
-      .get('/api/reportes/corte-caja?fecha=2026-09-21')
+      .get(`/api/reportes/corte-caja?fecha=${cashDate()}`)
       .set('Authorization', `Bearer ${recepcionistaToken}`)
 
     expect(response.status).toBe(200)

@@ -23,6 +23,13 @@ const getRange = (fechaInicio, fechaFin) => {
 
 const dateQuery = (range) => ({ fecha: { $gte: range.start, $lt: range.end } })
 
+const paymentDateQuery = (start, end) => ({
+  $or: [
+    { completadoEn: { $gte: start, $lt: end } },
+    { completadoEn: { $exists: false }, updatedAt: { $gte: start, $lt: end } },
+  ],
+})
+
 export const ingresos = async (req, res) => {
   const range = getRange(req.query.fechaInicio, req.query.fechaFin)
   if (!range) return res.status(400).json({ message: 'El rango de fechas no es válido' })
@@ -45,11 +52,19 @@ export const ingresos = async (req, res) => {
   }
   const ingresosCitas = citas.reduce((total, cita) => total + (cita.precioFinal || 0), 0)
   const ingresosProductos = movimientos.reduce((total, movimiento) => total + ((movimiento.producto?.precio || 0) * movimiento.cantidad), 0)
+  const ventasDetalle = Object.values(movimientos.reduce((detail, movimiento) => {
+    const name = movimiento.producto?.nombre || 'Producto no disponible'
+    if (!detail[name]) detail[name] = { producto: name, cantidad: 0, ingreso: 0 }
+    detail[name].cantidad += movimiento.cantidad
+    detail[name].ingreso += (movimiento.producto?.precio || 0) * movimiento.cantidad
+    return detail
+  }, {}))
 
   return res.json({
     rango: { fechaInicio: range.start.toISOString().slice(0, 10), fechaFin: new Date(range.end.getTime() - 86400000).toISOString().slice(0, 10) },
     ingresosCitas,
     ingresosProductos,
+    ventasDetalle,
     ingresosTotales: ingresosCitas + ingresosProductos,
     porBarbero,
     porServicio,
@@ -76,9 +91,11 @@ export const corteCaja = async (req, res) => {
   const date = parseDate(req.query.fecha)
   if (!date) return res.status(400).json({ message: 'La fecha debe tener formato YYYY-MM-DD' })
   const nextDate = new Date(date.getTime() + 86400000)
-  const query = { fecha: { $gte: date, $lt: nextDate }, estado: 'completada' }
+  const query = { ...paymentDateQuery(date, nextDate), estado: 'completada' }
   const existingClosure = await CorteCaja.findOne({ fecha: date, registradoPor: req.user._id })
-  if (existingClosure) query.createdAt = { $gt: existingClosure.cerradoEn }
+  if (existingClosure) {
+    Object.assign(query, paymentDateQuery(existingClosure.cerradoEn, nextDate))
+  }
   if (req.user.role === 'recepcionista') {
     query.creadoPor = req.user._id
   }
@@ -110,14 +127,23 @@ export const corteCaja = async (req, res) => {
     turnos[key].totalEfectivo += (movimiento.producto?.precio || 0) * movimiento.cantidad
     turnos[key].movimientos.push(movimiento)
   }
-  return res.json({ fecha: req.query.fecha, cerrado: Boolean(existingClosure && citas.length === 0), totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0), totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0), propinasEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.propinasEfectivo, 0), propinasTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.propinasTransferencia, 0), totalPropinas: Object.values(turnos).reduce((sum, turno) => sum + turno.totalPropinas, 0), turnos: Object.values(turnos) })
+  return res.json({
+    fecha: req.query.fecha,
+    cerrado: Boolean(existingClosure),
+    totalEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.totalEfectivo, 0),
+    totalTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.totalTransferencia, 0),
+    propinasEfectivo: Object.values(turnos).reduce((sum, turno) => sum + turno.propinasEfectivo, 0),
+    propinasTransferencia: Object.values(turnos).reduce((sum, turno) => sum + turno.propinasTransferencia, 0),
+    totalPropinas: Object.values(turnos).reduce((sum, turno) => sum + turno.totalPropinas, 0),
+    turnos: Object.values(turnos),
+  })
 }
 
 export const cerrarCaja = async (req, res) => {
   const date = parseDate(req.body.fecha || new Date().toISOString().slice(0, 10))
   if (!date) return res.status(400).json({ message: 'La fecha debe tener formato YYYY-MM-DD' })
   const nextDate = new Date(date.getTime() + 86400000)
-  const closeQuery = { fecha: { $gte: date, $lt: nextDate }, estado: 'completada' }
+  const closeQuery = { ...paymentDateQuery(date, nextDate), estado: 'completada' }
   if (req.user.role === 'recepcionista') closeQuery.creadoPor = req.user._id
   const citas = await Cita.find(closeQuery)
   const movementQuery = { fecha: { $gte: date, $lt: nextDate }, tipoMovimiento: 'venta', gratis: false }
@@ -138,11 +164,15 @@ export const cerrarCaja = async (req, res) => {
 
 export const propinas = async (req, res) => {
   if (req.user.role === 'recepcionista') return res.status(403).json({ message: 'Las propinas no están disponibles para recepcionistas' })
+  const requestedRange = req.user.role === 'admin' && (req.query.fechaInicio || req.query.fechaFin)
+    ? getRange(req.query.fechaInicio, req.query.fechaFin)
+    : null
+  if (req.user.role === 'admin' && (req.query.fechaInicio || req.query.fechaFin) && !requestedRange) return res.status(400).json({ message: 'El rango de fechas no es válido' })
   const now = new Date()
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   const mondayOffset = (today.getUTCDay() + 6) % 7
-  const start = new Date(today.getTime() - mondayOffset * 86400000)
-  const end = new Date(start.getTime() + 7 * 86400000)
+  const start = requestedRange?.start || new Date(today.getTime() - mondayOffset * 86400000)
+  const end = requestedRange?.end || new Date(start.getTime() + 7 * 86400000)
   const query = { fecha: { $gte: start, $lt: end }, estado: 'completada' }
   if (req.user.role === 'barbero') query.barbero = req.user._id
   const citas = await Cita.find(query).populate('barbero', 'name email role')

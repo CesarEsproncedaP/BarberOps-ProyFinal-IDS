@@ -218,6 +218,7 @@ export const completeCita = async (req, res) => {
   cita.beneficioAplicado = benefit?.label
   cita.propina = propina
   cita.estado = 'completada'
+  cita.completadoEn = new Date()
   await cita.save()
 
   return res.json({ cita })

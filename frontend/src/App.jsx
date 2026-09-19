@@ -112,6 +112,8 @@ function App() {
   });
   const [reportData, setReportData] = useState(null);
   const [reportTips, setReportTips] = useState(null);
+  const [reportDateRange, setReportDateRange] = useState({ fechaInicio: "", fechaFin: "" });
+  const [activeReportRange, setActiveReportRange] = useState({ fechaInicio: "", fechaFin: "" });
   const [cashData, setCashData] = useState(null);
   const [tipData, setTipData] = useState(null);
   const [paymentBenefit, setPaymentBenefit] = useState(null);
@@ -180,16 +182,20 @@ function App() {
     }
   }, [api, inventoryType]);
 
-  const loadReports = useCallback(async () => {
+  const loadReports = useCallback(async (rangeOverride = reportDateRange) => {
     try {
       if (user?.role === "admin") {
+        const query = rangeOverride.fechaInicio || rangeOverride.fechaFin
+          ? `?${new URLSearchParams(Object.fromEntries(Object.entries(rangeOverride).filter(([, value]) => value))).toString()}`
+          : "";
         const [income, occupancy, tips] = await Promise.all([
-          api("/reportes/ingresos"),
-          api("/reportes/ocupacion"),
-          api("/reportes/propinas"),
+          api(`/reportes/ingresos${query}`),
+          api(`/reportes/ocupacion${query}`),
+          api(`/reportes/propinas${query}`),
         ]);
         setReportData({ income, occupancy });
         setReportTips(tips);
+        setActiveReportRange({ ...rangeOverride, fechaInicio: income.rango.fechaInicio, fechaFin: income.rango.fechaFin });
       }
       if (user?.role === "barbero") {
         setTipData(await api("/reportes/propinas"));
@@ -200,7 +206,19 @@ function App() {
     } catch (requestError) {
       setError(requestError.message);
     }
-  }, [api, user]);
+  }, [api, reportDateRange, user]);
+
+  const applyReportDateRange = async () => {
+    setError("");
+    await loadReports();
+  };
+
+  const resetReportDateRange = async () => {
+    const emptyRange = { fechaInicio: "", fechaFin: "" };
+    setReportDateRange(emptyRange);
+    setError("");
+    await loadReports(emptyRange);
+  };
 
   useEffect(() => {
     if (!token) return undefined;
@@ -1189,6 +1207,13 @@ function App() {
               <p className="subheading">Ingresos y ocupación de la barbería.</p>
             </div>
           </div>
+          <div className="report-filters">
+            <label>Desde<input type="date" value={reportDateRange.fechaInicio} onChange={(event) => setReportDateRange({ ...reportDateRange, fechaInicio: event.target.value })} /></label>
+            <label>Hasta<input type="date" value={reportDateRange.fechaFin} onChange={(event) => setReportDateRange({ ...reportDateRange, fechaFin: event.target.value })} /></label>
+            <button className="primary-button" type="button" onClick={() => { void applyReportDateRange() }}>Filtrar</button>
+            <button className="secondary-button" type="button" onClick={() => { void resetReportDateRange() }}>Restablecer</button>
+          </div>
+          {activeReportRange.fechaInicio && activeReportRange.fechaFin && <p className="report-range">Mostrando: {new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${activeReportRange.fechaInicio}T00:00:00`))} - {new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${activeReportRange.fechaFin}T00:00:00`))}</p>}
           {error && <div className="feedback error-message">{error}</div>}
           {reportData ? (
             <div className="report-grid">
@@ -1206,6 +1231,11 @@ function App() {
                   ${reportData.income.ingresosProductos.toFixed(2)}
                 </strong>
               </article>
+              <section className="report-table">
+                <h2>Detalle de productos vendidos</h2>
+                <p><span>Producto</span><strong>Cantidad · Ingreso</strong></p>
+                {(reportData.income.ventasDetalle || []).map((sale) => <p key={sale.producto}><span>{sale.producto}</span><strong>{sale.cantidad} · ${sale.ingreso.toFixed(2)}</strong></p>)}
+              </section>
               {reportTips && <section className="report-table tip-report-summary"><h2>Propinas de la semana - Todos los barberos</h2><p><span>Total</span><strong>${reportTips.total.toFixed(2)}</strong></p>{reportTips.porBarbero.map((barber) => <p key={barber.barbero?._id}><span>{barber.barbero?.name || "Sin barbero"}</span><strong>${barber.total.toFixed(2)}</strong></p>)}</section>}
               <section className="report-table">
                 <h2>Ingresos por barbero</h2>
