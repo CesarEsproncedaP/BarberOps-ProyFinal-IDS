@@ -76,6 +76,7 @@ afterAll(async () => {
 describe('citas integration', () => {
   it('creates an appointment as a recepcionista', async () => {
     const response = await createAppointment(recepcionistaToken)
+    const cliente = await Cliente.findOne({ telefono: '555-0101' })
 
     expect(response.status).toBe(201)
     expect(response.body.cita).toMatchObject({
@@ -84,6 +85,8 @@ describe('citas integration', () => {
       estado: 'agendada',
     })
     expect(response.body.cita.creadoPor.name).toBe('Recepcionista')
+    expect(cliente.historialVisitas).toHaveLength(0)
+    expect(cliente.contadorCortes).toBe(0)
   })
 
   it('rejects creation by a barbero', async () => {
@@ -216,6 +219,9 @@ describe('citas integration', () => {
     expect(response.status).toBe(200)
     expect(response.body.cita.estado).toBe('cancelada')
     expect(await Cita.findById(created.body.cita._id)).not.toBeNull()
+    const cliente = await Cliente.findOne({ telefono: '555-0101' })
+    expect(cliente.historialVisitas).toHaveLength(0)
+    expect(cliente.contadorCortes).toBe(0)
   })
 
   it('rejects cancellation without authentication', async () => {

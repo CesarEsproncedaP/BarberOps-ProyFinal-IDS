@@ -98,7 +98,7 @@ export const createCita = async (req, res) => {
     creadoPor: req.user._id,
   })
 
-  await recordClientVisit({ cita, clienteNombre, clienteTelefono, barbero, servicio, incluyoCorte })
+  await findOrCreateCliente({ nombre: clienteNombre, telefono: clienteTelefono })
   try {
     await notificationService.enviarConfirmacion(cita)
   } catch (error) {
@@ -193,25 +193,14 @@ export const completeCita = async (req, res) => {
   const resolvedPrecioBase = precioBase === null ? priceForService(cita.servicio) : precioBase
   if (resolvedPrecioBase <= 0) return res.status(400).json({ message: 'El precio base debe ser mayor que cero o indicar un servicio con precio configurado' })
 
-  let cliente = await Cliente.findOne({ telefono: cita.clienteTelefono })
-  if (!cliente) {
-    await recordClientVisit({
-      cita,
-      clienteNombre: cita.clienteNombre,
-      clienteTelefono: cita.clienteTelefono,
-      barbero: cita.barbero,
-      servicio: cita.servicio,
-      incluyoCorte: cita.incluyoCorte,
-    })
-    cliente = await findOrCreateCliente({ nombre: cita.clienteNombre, telefono: cita.clienteTelefono })
-  }
+  const cliente = await findOrCreateCliente({ nombre: cita.clienteNombre, telefono: cita.clienteTelefono })
   if (metodoPago === 'transferencia' && (cliente.historialVisitas.length < 5 || cliente.metodoPagoRestringido)) {
     const reason = cliente.metodoPagoRestringido ? 'tiene un adeudo pendiente' : 'tiene menos de 5 visitas registradas'
     return res.status(400).json({ message: `No puede pagar por transferencia porque ${reason}` })
   }
 
-  const totalCortes = cliente.historialVisitas.filter((visit) => visit.incluyoCorte).length
-  const benefit = loyaltyBenefitFor(cliente.contadorCortes, totalCortes)
+  const totalCortes = cliente.historialVisitas.filter((visit) => visit.incluyoCorte).length + (cita.incluyoCorte ? 1 : 0)
+  const benefit = loyaltyBenefitFor(cliente.contadorCortes + (cita.incluyoCorte ? 1 : 0), totalCortes)
   cita.precioBase = resolvedPrecioBase
   cita.precioFinal = benefit ? Number((resolvedPrecioBase * benefit.priceMultiplier).toFixed(2)) : resolvedPrecioBase
   cita.metodoPago = metodoPago
@@ -220,6 +209,14 @@ export const completeCita = async (req, res) => {
   cita.estado = 'completada'
   cita.completadoEn = new Date()
   await cita.save()
+  await recordClientVisit({
+    cita,
+    clienteNombre: cita.clienteNombre,
+    clienteTelefono: cita.clienteTelefono,
+    barbero: cita.barbero,
+    servicio: cita.servicio,
+    incluyoCorte: cita.incluyoCorte,
+  })
 
   return res.json({ cita })
 }

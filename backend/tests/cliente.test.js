@@ -40,6 +40,11 @@ const createAppointment = (overrides = {}) => request(app)
   .set('Authorization', `Bearer ${recepcionistaToken}`)
   .send(appointmentData(overrides))
 
+const completeAppointment = (id, overrides = {}) => request(app)
+  .patch(`/api/citas/${id}/completar`)
+  .set('Authorization', `Bearer ${recepcionistaToken}`)
+  .send({ precioBase: 250, metodoPago: 'efectivo', ...overrides })
+
 beforeAll(async () => {
   process.env.JWT_SECRET = 'test-secret'
   mongoServer = await MongoMemoryServer.create()
@@ -69,18 +74,24 @@ afterAll(async () => {
 describe('clientes integration', () => {
   it('creates a client automatically with a new appointment', async () => {
     const response = await createAppointment()
-    const cliente = await Cliente.findOne({ telefono: '555-0202' })
+    let cliente = await Cliente.findOne({ telefono: '555-0202' })
 
     expect(response.status).toBe(201)
     expect(cliente).not.toBeNull()
     expect(cliente.nombre).toBe('Cliente Leal')
+    expect(cliente.historialVisitas).toHaveLength(0)
+    expect(cliente.contadorCortes).toBe(0)
+    await completeAppointment(response.body.cita._id)
+    cliente = await Cliente.findOne({ telefono: '555-0202' })
     expect(cliente.historialVisitas).toHaveLength(1)
     expect(cliente.contadorCortes).toBe(1)
   })
 
   it('reuses an existing client and appends a visit', async () => {
-    await createAppointment()
+    const first = await createAppointment()
+    await completeAppointment(first.body.cita._id)
     const second = await createAppointment({ fecha: '2026-09-22', horaInicio: '12:00', horaFin: '12:45', servicio: 'Barba' })
+    await completeAppointment(second.body.cita._id, { precioBase: 150 })
     const clientes = await Cliente.find({ telefono: '555-0202' })
 
     expect(second.status).toBe(201)
@@ -90,15 +101,19 @@ describe('clientes integration', () => {
   })
 
   it('only increments the cut counter when the visit includes a cut', async () => {
-    await createAppointment({ servicio: 'Barba', incluyoCorte: false })
-    const cliente = await Cliente.findOne({ telefono: '555-0202' })
+    const created = await createAppointment({ servicio: 'Barba', incluyoCorte: false })
+    let cliente = await Cliente.findOne({ telefono: '555-0202' })
 
     expect(cliente.contadorCortes).toBe(0)
+    expect(cliente.historialVisitas).toHaveLength(0)
+    await completeAppointment(created.body.cita._id, { precioBase: 150 })
+    cliente = await Cliente.findOne({ telefono: '555-0202' })
     expect(cliente.historialVisitas[0].incluyoCorte).toBe(false)
   })
 
   it('finds a client by phone and returns loyalty and payment information', async () => {
-    await createAppointment()
+    const created = await createAppointment()
+    await completeAppointment(created.body.cita._id)
     const response = await request(app)
       .get('/api/clientes/telefono/555-0202')
       .set('Authorization', `Bearer ${recepcionistaToken}`)
@@ -111,7 +126,8 @@ describe('clientes integration', () => {
   it('exposes the loyalty benefit and transfer eligibility from visit history', async () => {
     const dates = ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25']
     for (const [index, date] of dates.entries()) {
-      await createAppointment({ fecha: date, horaInicio: index < 4 ? '11:00' : '15:00', horaFin: index < 4 ? '11:45' : '15:45' })
+      const created = await createAppointment({ fecha: date, horaInicio: index < 4 ? '11:00' : '15:00', horaFin: index < 4 ? '11:45' : '15:45' })
+      await completeAppointment(created.body.cita._id)
     }
 
     const response = await request(app)
@@ -152,11 +168,12 @@ describe('clientes integration', () => {
 
     for (const [index, currentDate] of dates.entries()) {
       const isSaturday = new Date(`${currentDate}T00:00:00.000Z`).getUTCDay() === 6
-      await createAppointment({
+      const created = await createAppointment({
         fecha: currentDate,
         horaInicio: isSaturday ? '14:00' : index % 2 === 0 ? '11:00' : '15:00',
         horaFin: isSaturday ? '14:45' : index % 2 === 0 ? '11:45' : '15:45',
       })
+      await completeAppointment(created.body.cita._id)
     }
 
     const cliente = await Cliente.findOne({ telefono: '555-0202' })

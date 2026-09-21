@@ -110,7 +110,10 @@ describe('cobro y reportes integration', () => {
   it('applies 20 percent discount on the third cut', async () => {
     const dates = ['2026-09-21', '2026-09-22', '2026-09-23']
     let last
-    for (const [index, fecha] of dates.entries()) last = await createAppointment(recepcionistaToken, { fecha, horaInicio: index === 2 ? '15:00' : '11:00', horaFin: index === 2 ? '15:45' : '11:45' })
+    for (const [index, fecha] of dates.entries()) {
+      last = await createAppointment(recepcionistaToken, { fecha, horaInicio: index === 2 ? '15:00' : '11:00', horaFin: index === 2 ? '15:45' : '11:45' })
+      if (index < 2) await complete(recepcionistaToken, last.body.cita._id, { precioBase: 100, metodoPago: 'efectivo' })
+    }
     const response = await complete(recepcionistaToken, last.body.cita._id, { precioBase: 100, metodoPago: 'efectivo' })
     expect(response.body.cita).toMatchObject({ precioFinal: 80, beneficioAplicado: '20% descuento (3er corte)' })
   })
@@ -126,6 +129,7 @@ describe('cobro y reportes integration', () => {
     for (const [index, fecha] of dates.entries()) {
       const saturday = new Date(`${fecha}T00:00:00.000Z`).getUTCDay() === 6
       last = await createAppointment(recepcionistaToken, { fecha, horaInicio: saturday ? '14:00' : index % 2 ? '15:00' : '11:00', horaFin: saturday ? '14:45' : index % 2 ? '15:45' : '11:45' })
+      if (index < dates.length - 1) await complete(recepcionistaToken, last.body.cita._id, { precioBase: 250, metodoPago: 'efectivo' })
     }
     const response = await complete(recepcionistaToken, last.body.cita._id, { precioBase: 250, metodoPago: 'efectivo' })
     const client = await Cliente.findOne({ telefono: '555-0606' })
@@ -199,7 +203,7 @@ describe('cobro y reportes integration', () => {
       await createAppointment(secondRecepcionistaToken, { clienteTelefono: '555-0902', fecha: `2026-09-${String(21 + index).padStart(2, '0')}` })
     }
     const existingClient = await Cliente.findOne({ telefono: '555-0902' })
-    existingClient.historialVisitas.push({ citaId: new mongoose.Types.ObjectId(), fecha: new Date('2026-09-20T00:00:00.000Z'), barbero: barberoOne._id, servicio: 'Corte', incluyoCorte: true })
+    for (let index = 0; index < 5; index += 1) existingClient.historialVisitas.push({ citaId: new mongoose.Types.ObjectId(), fecha: new Date(`2026-09-${String(17 + index).padStart(2, '0')}T00:00:00.000Z`), barbero: barberoOne._id, servicio: 'Corte', incluyoCorte: true })
     await existingClient.save()
     const second = await createAppointment(secondRecepcionistaToken, { clienteTelefono: '555-0902', fecha: cashDate(), horaInicio: '12:00', horaFin: '12:45' })
     await complete(recepcionistaToken, first.body.cita._id, { precioBase: 100, metodoPago: 'efectivo' })
