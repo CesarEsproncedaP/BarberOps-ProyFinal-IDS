@@ -497,7 +497,7 @@ function App() {
               />
             </label>
             <label>
-              Contraseña
+              Password
               <input
                 name="password"
                 type="password"
