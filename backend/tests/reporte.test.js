@@ -112,10 +112,10 @@ describe('cobro y reportes integration', () => {
     let last
     for (const [index, fecha] of dates.entries()) {
       last = await createAppointment(recepcionistaToken, { fecha, horaInicio: index === 2 ? '15:00' : '11:00', horaFin: index === 2 ? '15:45' : '11:45' })
-      if (index < 2) await complete(recepcionistaToken, last.body.cita._id, { precioBase: 100, metodoPago: 'efectivo' })
+      if (index < 2) await complete(recepcionistaToken, last.body.cita._id, { precioBase: 320, metodoPago: 'efectivo' })
     }
-    const response = await complete(recepcionistaToken, last.body.cita._id, { precioBase: 100, metodoPago: 'efectivo' })
-    expect(response.body.cita).toMatchObject({ precioFinal: 80, beneficioAplicado: '20% descuento (3er corte)' })
+    const response = await complete(recepcionistaToken, last.body.cita._id, { precioBase: 320, metodoPago: 'efectivo' })
+    expect(response.body.cita).toMatchObject({ precioBase: 320, precioFinal: 256, beneficioAplicado: '20% descuento (3er corte)' })
   })
 
   it('makes the twelfth cut free and resets the loyalty counter', async () => {

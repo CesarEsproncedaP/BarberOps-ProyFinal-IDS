@@ -135,17 +135,17 @@ describe('clientes integration', () => {
       .set('Authorization', `Bearer ${recepcionistaToken}`)
 
     expect(response.status).toBe(200)
-    expect(response.body.cliente).toMatchObject({ contadorCortes: 5, beneficioLealtad: null, puedePagarTransferencia: true })
+    expect(response.body.cliente).toMatchObject({ contadorCortes: 5, beneficioLealtad: 'Producto gratis (6to corte)', puedePagarTransferencia: true })
   })
 
   it.each([
-    [3, '20% de descuento'],
-    [6, 'Producto gratis'],
-    [9, '35% de descuento o producto gratis'],
+    [2, '20% descuento (3er corte)'],
+    [5, 'Producto gratis (6to corte)'],
+    [8, '35% descuento (9no corte)'],
     [12, null],
     [4, null],
     [7, null],
-    [8, null],
+    [8, '35% descuento (9no corte)'],
   ])('returns the exact loyalty benefit for %s cuts', async (cuts, expectedBenefit) => {
     const telefono = `555-${4000 + cuts}`
     await Cliente.create({ nombre: `Cliente ${cuts}`, telefono, contadorCortes: cuts })

@@ -1,18 +1,14 @@
 import mongoose from 'mongoose'
 import Cliente from '../models/Cliente.js'
-
-const benefitFor = (contadorCortes) => {
-  if (contadorCortes === 9) return '35% de descuento o producto gratis'
-  if (contadorCortes === 6) return 'Producto gratis'
-  if (contadorCortes === 3) return '20% de descuento'
-  return null
-}
+import { loyaltyBenefitFor } from '../services/clienteService.js'
 
 const publicCliente = (cliente) => {
   const data = cliente.toObject ? cliente.toObject() : cliente
+  const totalCortes = data.historialVisitas.filter((visit) => visit.incluyoCorte).length
+  const nextBenefit = loyaltyBenefitFor(data.contadorCortes + 1, totalCortes + 1)
   return {
     ...data,
-    beneficioLealtad: benefitFor(data.contadorCortes),
+    beneficioLealtad: nextBenefit?.label || null,
     puedePagarTransferencia: data.historialVisitas.length >= 5 && !data.metodoPagoRestringido,
   }
 }
